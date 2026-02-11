@@ -48,8 +48,8 @@ Thumbs.db
 bin/nuclei.exe
 
 # User data
-poc_library/cloud/
-poc_library/user_generated/
+# poc_library/cloud/
+# poc_library/user_generated/
 
 # Temp files
 *.tmp
