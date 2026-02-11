@@ -1,0 +1,25 @@
+id: test-robots-txt
+
+info:
+  name: 测试POC - robots.txt 检测
+  author: Debug
+  severity: info
+  description: 用于测试扫描器的POC，检测 robots.txt 文件
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/robots.txt"
+    
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      
+      - type: word
+        part: body
+        words:
+          - "User-agent"
+          - "Disallow"
+        condition: or
