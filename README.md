@@ -25,6 +25,7 @@ pip install -r requirements.txt
 ### 安装 Nuclei 扫描引擎
 
 #### 方法一：程序内置下载（推荐）
+安装nuclei失败建议连接代理重试
 
 程序启动后会自动检测 Nuclei 状态，如果未安装会显示下载按钮：
 
