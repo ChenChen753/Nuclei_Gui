@@ -3,8 +3,8 @@
 统一管理应用程序版本信息
 """
 
-__version__ = "2.3.0"
-__version_info__ = (2, 3, 0)
+__version__ = "2.3.1"
+__version_info__ = (2, 3, 1)
 __author__ = "辰辰"
 __app_name__ = "Nuclei GUI Scanner"
 

@@ -1192,6 +1192,102 @@ class MainWindow(QMainWindow):
         theme_layout.addStretch()
         settings_tabs.addTab(theme_tab, "主题设置")
         
+        # Tab 5: Nuclei 管理
+        nuclei_tab = QWidget()
+        nuclei_layout = QVBoxLayout(nuclei_tab)
+        nuclei_layout.setContentsMargins(25, 25, 25, 25)
+        nuclei_layout.setSpacing(15)
+        
+        # 系统信息组
+        info_group = QGroupBox("系统信息")
+        info_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-size: 14px;
+                font-weight: bold;
+                color: {FORTRESS_COLORS['text_primary']};
+                border: 1px solid {FORTRESS_COLORS['nav_border']};
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+            }}
+        """)
+        info_layout = QGridLayout(info_group)
+        info_layout.setSpacing(10)
+        
+        import platform
+        system = platform.system()
+        machine = platform.machine()
+        info_layout.addWidget(QLabel("操作系统:"), 0, 0)
+        info_layout.addWidget(QLabel(f"{system} {machine}"), 0, 1)
+        
+        info_layout.addWidget(QLabel("Nuclei 状态:"), 1, 0)
+        self.nuclei_status_label = QLabel("检测中...")
+        info_layout.addWidget(self.nuclei_status_label, 1, 1)
+        
+        nuclei_layout.addWidget(info_group)
+        
+        # Nuclei 下载管理组
+        download_group = QGroupBox("Nuclei 下载管理")
+        download_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-size: 14px;
+                font-weight: bold;
+                color: {FORTRESS_COLORS['text_primary']};
+                border: 1px solid {FORTRESS_COLORS['nav_border']};
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+            }}
+        """)
+        download_layout = QVBoxLayout(download_group)
+        
+        # 说明文本
+        desc_label = QLabel("""
+        <b>自动下载和配置 Nuclei 扫描引擎</b><br>
+        • 自动检测您的操作系统和架构<br>
+        • 从 GitHub 下载最新版本的 Nuclei<br>
+        • 自动解压并配置到正确位置<br>
+        • 设置执行权限（Unix 系统）
+        """)
+        desc_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px; padding: 10px;")
+        download_layout.addWidget(desc_label)
+        
+        # 按钮区域
+        btn_layout = QHBoxLayout()
+        
+        self.download_nuclei_btn = self._create_fortress_button("下载最新版本 Nuclei", "info")
+        self.download_nuclei_btn.clicked.connect(self._download_nuclei)
+        btn_layout.addWidget(self.download_nuclei_btn)
+        
+        self.check_nuclei_btn = self._create_fortress_button("检测 Nuclei", "success")
+        self.check_nuclei_btn.clicked.connect(self._check_nuclei_status)
+        btn_layout.addWidget(self.check_nuclei_btn)
+        
+        download_layout.addLayout(btn_layout)
+        
+        # 进度显示
+        self.nuclei_progress_label = QLabel("")
+        self.nuclei_progress_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 5px;")
+        download_layout.addWidget(self.nuclei_progress_label)
+        
+        nuclei_layout.addWidget(download_group)
+        nuclei_layout.addStretch()
+        
+        settings_tabs.addTab(nuclei_tab, "Nuclei 管理")
+        
+        # 初始检测 Nuclei 状态
+        self._check_nuclei_status()
+        
         layout.addWidget(settings_tabs)
 
         
@@ -3183,6 +3279,107 @@ class MainWindow(QMainWindow):
                 new_targets = "\n".join(targets)
                 self.txt_targets.setPlainText(new_targets)  # 替换而不是追加
                 QMessageBox.information(self, "成功", f"已导入 {len(targets)} 个目标")
+    
+    def _check_nuclei_status(self):
+        """检测 Nuclei 状态"""
+        try:
+            from core.nuclei_runner import get_nuclei_path
+            import os
+            
+            nuclei_path = get_nuclei_path()
+            
+            if os.path.exists(nuclei_path):
+                self.nuclei_status_label.setText("[OK] 已安装")
+                self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['btn_success']}; font-weight: bold;")
+                self.download_nuclei_btn.setText("更新到最新版本")
+            else:
+                self.nuclei_status_label.setText("[FAIL] 未安装")
+                self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']}; font-weight: bold;")
+                self.download_nuclei_btn.setText("下载最新版本 Nuclei")
+                
+        except Exception as e:
+            self.nuclei_status_label.setText(f"[FAIL] 检测失败: {str(e)}")
+            self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']}; font-weight: bold;")
+    
+    def _download_nuclei(self):
+        """下载 Nuclei"""
+        try:
+            import subprocess
+            import sys
+            import os
+            from PyQt5.QtCore import QThread, pyqtSignal
+            from PyQt5.QtWidgets import QMessageBox
+            
+            # 创建下载线程
+            class NucleiDownloadThread(QThread):
+                progress_signal = pyqtSignal(str)
+                finished_signal = pyqtSignal(bool, str)
+                
+                def run(self):
+                    try:
+                        self.progress_signal.emit("正在下载 Nuclei...")
+                        
+                        # 调用简化版下载脚本（已修复网络和跨平台问题）
+                        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_nuclei_simple.py")
+                        
+                        if os.path.exists(script_path):
+                            # 使用Popen实时读取输出
+                            process = subprocess.Popen([sys.executable, script_path],
+                                                     stdout=subprocess.PIPE, 
+                                                     stderr=subprocess.STDOUT,
+                                                     text=True, 
+                                                     bufsize=1,
+                                                     universal_newlines=True)
+                            
+                            # 实时读取输出
+                            while True:
+                                output = process.stdout.readline()
+                                if output == '' and process.poll() is not None:
+                                    break
+                                if output:
+                                    line = output.strip()
+                                    if line:
+                                        self.progress_signal.emit(line)
+                            
+                            # 等待进程完成
+                            return_code = process.wait()
+                            
+                            if return_code == 0:
+                                self.finished_signal.emit(True, "Nuclei 下载完成！")
+                            else:
+                                self.finished_signal.emit(False, "下载失败")
+                        else:
+                            self.finished_signal.emit(False, "找不到下载脚本")
+                            
+                    except Exception as e:
+                        self.finished_signal.emit(False, f"下载过程中出错: {str(e)}")
+            
+            # 禁用按钮并启动下载
+            self.download_nuclei_btn.setEnabled(False)
+            self.nuclei_progress_label.setText("准备下载...")
+            
+            self.nuclei_download_thread = NucleiDownloadThread()
+            self.nuclei_download_thread.progress_signal.connect(self.nuclei_progress_label.setText)
+            self.nuclei_download_thread.finished_signal.connect(self._on_nuclei_download_finished)
+            self.nuclei_download_thread.start()
+            
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "错误", f"启动下载失败: {str(e)}")
+            self.download_nuclei_btn.setEnabled(True)
+    
+    def _on_nuclei_download_finished(self, success, message):
+        """Nuclei 下载完成回调"""
+        from PyQt5.QtWidgets import QMessageBox
+        self.download_nuclei_btn.setEnabled(True)
+        
+        if success:
+            QMessageBox.information(self, "成功", message)
+            self.nuclei_progress_label.setText("下载完成")
+            self._check_nuclei_status()  # 重新检测状态
+        else:
+            QMessageBox.critical(self, "失败", message)
+            self.nuclei_progress_label.setText("下载失败")
     
     def open_ai_dialog(self):
         """打开 AI 助手弹窗"""
@@ -5952,6 +6149,104 @@ def install_exception_hook():
     import sys
     import traceback
     from PyQt5.QtWidgets import QMessageBox, QApplication
+    
+    def _check_nuclei_status(self):
+        """检测 Nuclei 状态"""
+        try:
+            from core.nuclei_runner import get_nuclei_path
+            import os
+            
+            nuclei_path = get_nuclei_path()
+            
+            if os.path.exists(nuclei_path):
+                self.nuclei_status_label.setText("[OK] 已安装")
+                self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['btn_success']}; font-weight: bold;")
+                self.download_nuclei_btn.setText("更新到最新版本")
+            else:
+                self.nuclei_status_label.setText("[FAIL] 未安装")
+                self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']}; font-weight: bold;")
+                self.download_nuclei_btn.setText("下载最新版本 Nuclei")
+                
+        except Exception as e:
+            self.nuclei_status_label.setText(f"[FAIL] 检测失败: {str(e)}")
+            self.nuclei_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']}; font-weight: bold;")
+    
+    def _download_nuclei(self):
+        """下载 Nuclei"""
+        try:
+            import subprocess
+            import sys
+            import os
+            from PyQt5.QtCore import QThread, pyqtSignal
+            
+            # 创建下载线程
+            class NucleiDownloadThread(QThread):
+                progress_signal = pyqtSignal(str)
+                finished_signal = pyqtSignal(bool, str)
+                
+                def run(self):
+                    try:
+                        self.progress_signal.emit("正在下载 Nuclei...")
+                        
+                        # 调用简化版下载脚本（已修复网络和跨平台问题）
+                        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_nuclei_simple.py")
+                        
+                        if os.path.exists(script_path):
+                            # 使用Popen实时读取输出
+                            process = subprocess.Popen([sys.executable, script_path],
+                                                     stdout=subprocess.PIPE, 
+                                                     stderr=subprocess.STDOUT,
+                                                     text=True, 
+                                                     bufsize=1,
+                                                     universal_newlines=True)
+                            
+                            # 实时读取输出
+                            while True:
+                                output = process.stdout.readline()
+                                if output == '' and process.poll() is not None:
+                                    break
+                                if output:
+                                    line = output.strip()
+                                    if line:
+                                        self.progress_signal.emit(line)
+                            
+                            # 等待进程完成
+                            return_code = process.wait()
+                            
+                            if return_code == 0:
+                                self.finished_signal.emit(True, "Nuclei 下载完成！")
+                            else:
+                                self.finished_signal.emit(False, "下载失败")
+                        else:
+                            self.finished_signal.emit(False, "找不到下载脚本")
+                            
+                    except Exception as e:
+                        self.finished_signal.emit(False, f"下载过程中出错: {str(e)}")
+            
+            # 禁用按钮并启动下载
+            self.download_nuclei_btn.setEnabled(False)
+            self.nuclei_progress_label.setText("准备下载...")
+            
+            self.nuclei_download_thread = NucleiDownloadThread()
+            self.nuclei_download_thread.progress_signal.connect(self.nuclei_progress_label.setText)
+            self.nuclei_download_thread.finished_signal.connect(self._on_nuclei_download_finished)
+            self.nuclei_download_thread.start()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"启动下载失败: {str(e)}")
+            self.download_nuclei_btn.setEnabled(True)
+    
+    def _on_nuclei_download_finished(self, success, message):
+        """Nuclei 下载完成回调"""
+        self.download_nuclei_btn.setEnabled(True)
+        
+        if success:
+            QMessageBox.information(self, "成功", message)
+            self.nuclei_progress_label.setText("下载完成")
+            self._check_nuclei_status()  # 重新检测状态
+        else:
+            QMessageBox.critical(self, "失败", message)
+            self.nuclei_progress_label.setText("下载失败")
     
     def exception_hook(exctype, value, tb):
         error_msg = "".join(traceback.format_exception(exctype, value, tb))

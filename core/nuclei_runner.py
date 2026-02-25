@@ -5,6 +5,7 @@ import tempfile
 import threading
 import datetime as import_datetime
 import traceback
+import platform
 from PyQt5.QtCore import QThread, pyqtSignal
 
 # 导入日志模块
@@ -21,6 +22,53 @@ def log_debug(msg):
             f.write(f"[{timestamp}] {msg}\n")
     except (IOError, OSError):
         pass
+
+def get_nuclei_path():
+    """
+    跨平台获取 Nuclei 可执行文件路径
+    优先级：bin目录下的二进制文件 > 系统PATH中的nuclei
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    bin_dir = os.path.join(project_root, 'bin')
+    
+    # 根据操作系统确定二进制文件名
+    system = platform.system().lower()
+    if system == 'windows':
+        nuclei_binary = 'nuclei.exe'
+    elif system == 'darwin':  # macOS
+        nuclei_binary = 'nuclei_darwin'
+    elif system == 'linux':
+        nuclei_binary = 'nuclei_linux'
+    else:
+        nuclei_binary = 'nuclei'  # 默认
+    
+    # 检查 bin 目录下是否有对应的二进制文件
+    bin_nuclei_path = os.path.join(bin_dir, nuclei_binary)
+    if os.path.exists(bin_nuclei_path):
+        # 确保文件有执行权限（Unix系统）
+        if system in ['darwin', 'linux']:
+            try:
+                os.chmod(bin_nuclei_path, 0o755)
+            except OSError:
+                pass
+        log_debug(f"使用 bin 目录下的 Nuclei: {bin_nuclei_path}")
+        return bin_nuclei_path
+    
+    # 检查系统PATH中是否有nuclei
+    try:
+        result = subprocess.run(['which', 'nuclei'] if system != 'windows' else ['where', 'nuclei'],
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            system_nuclei = result.stdout.strip().split('\n')[0]
+            log_debug(f"使用系统 PATH 中的 Nuclei: {system_nuclei}")
+            return system_nuclei
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+        pass
+    
+    # 如果都没找到，返回默认的nuclei命令，让系统尝试执行
+    log_debug(f"未找到 Nuclei 二进制文件，使用默认命令: nuclei")
+    return 'nuclei'
 
 class NucleiScanThread(QThread):
     """
@@ -141,15 +189,11 @@ class NucleiScanThread(QThread):
         self.finished_signal.emit()
 
     def run_single_mode(self, targets):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(current_dir)
-
-        nuclei_cmd = "nuclei"
-        bin_nuclei = os.path.join(project_root, 'bin', 'nuclei.exe')
-        if os.path.exists(bin_nuclei):
-            nuclei_cmd = bin_nuclei
-
+        # 使用跨平台的 Nuclei 路径检测
+        nuclei_cmd = get_nuclei_path()
+        
         log_debug(f"使用 Nuclei 路径: {nuclei_cmd}")
+        log_debug(f"当前操作系统: {platform.system()}")
         log_debug(f"目标数量: {len(targets)}, 模板数量: {len(self.templates)}")
 
         # 检查模板是否为空
@@ -194,6 +238,8 @@ class NucleiScanThread(QThread):
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             
             env = os.environ.copy()
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(current_dir)
             bin_dir = os.path.join(project_root, 'bin')
             env["PATH"] = bin_dir + os.pathsep + env["PATH"]
             env["PYTHONIOENCODING"] = "utf-8"

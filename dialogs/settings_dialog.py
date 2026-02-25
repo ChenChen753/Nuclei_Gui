@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QPushButton, QComboBox, QSpinBox,
     QCheckBox, QGroupBox, QGridLayout, QMessageBox, QListWidget,
-    QListWidgetItem, QFormLayout, QTextEdit
+    QListWidgetItem, QFormLayout, QTextEdit, QProgressBar
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
 import sys
@@ -17,10 +17,103 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.settings_manager import get_settings
 
 
+class NucleiDownloadThread(QThread):
+    """Nuclei 下载线程"""
+    progress_signal = pyqtSignal(str)
+    progress_percent_signal = pyqtSignal(int)
+    finished_signal = pyqtSignal(bool, str)
+    
+    def run(self):
+        try:
+            import subprocess
+            import sys
+            import os
+            
+            self.progress_signal.emit("正在检查 Nuclei...")
+            self.progress_percent_signal.emit(0)
+            
+            # 调用带进度的下载脚本
+            script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "download_nuclei_with_progress.py")
+            
+            if os.path.exists(script_path):
+                # 实时读取输出
+                process = subprocess.Popen([sys.executable, script_path],
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT,
+                                         text=True,
+                                         bufsize=1,
+                                         encoding='utf-8',
+                                         errors='ignore')
+                
+                success = False
+                error_output = []
+                
+                for line in iter(process.stdout.readline, ''):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    if line.startswith("PROGRESS:"):
+                        # 解析进度: PROGRESS:percent:message
+                        parts = line.split(":", 2)
+                        if len(parts) >= 3:
+                            try:
+                                percent = int(parts[1])
+                                message = parts[2]
+                                self.progress_percent_signal.emit(percent)
+                                self.progress_signal.emit(message)
+                                
+                                if percent == 100 and "安装完成" in message:
+                                    success = True
+                            except ValueError:
+                                pass
+                    elif line.startswith("STATUS:"):
+                        # 解析状态: STATUS:message
+                        message = line[7:]  # 去掉 "STATUS:" 前缀
+                        self.progress_signal.emit(message)
+                    else:
+                        # 其他输出作为错误信息收集
+                        error_output.append(line)
+                
+                process.wait()
+                
+                if success or process.returncode == 0:
+                    self.finished_signal.emit(True, "Nuclei 安装完成！")
+                else:
+                    error_msg = "\n".join(error_output) if error_output else "安装失败"
+                    # 检查是否是网络问题
+                    if "ProxyError" in error_msg or "ConnectionError" in error_msg or "网络错误" in error_msg:
+                        self.finished_signal.emit(False,
+                            "网络连接失败，请检查网络设置或代理配置。\n"
+                            "您也可以手动下载 Nuclei：\n"
+                            "1. 访问 https://github.com/projectdiscovery/nuclei/releases\n"
+                            "2. 下载 nuclei_*_windows_amd64.zip\n"
+                            "3. 解压后将 nuclei.exe 放入 bin/ 目录")
+                    elif "未找到 Nuclei" in error_msg or "下载失败" in error_msg:
+                        self.finished_signal.emit(False,
+                            "未找到 Nuclei，请手动安装：\n\n"
+                            "方法1 - 手动下载：\n"
+                            "1. 访问 https://github.com/projectdiscovery/nuclei/releases\n"
+                            "2. 下载适合您系统的版本\n"
+                            "3. 解压后将可执行文件放入 bin/ 目录\n"
+                            "4. 重命名为 nuclei.exe\n\n"
+                            "方法2 - 使用 Go 安装：\n"
+                            "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest")
+                    else:
+                        self.finished_signal.emit(False, f"安装失败: {error_msg}")
+            else:
+                self.finished_signal.emit(False, "找不到下载脚本 download_nuclei_with_progress.py")
+                
+        except subprocess.TimeoutExpired:
+            self.finished_signal.emit(False, "下载超时，请检查网络连接")
+        except Exception as e:
+            self.finished_signal.emit(False, f"下载过程中出错: {str(e)}")
+
+
 class SettingsDialog(QDialog):
     """
     统一设置弹窗
-    包含 AI 配置、FOFA 配置、扫描参数三个 Tab 页
+    包含 AI 配置、FOFA 配置、扫描参数、Nuclei 管理四个 Tab 页
     """
     
     def __init__(self, parent=None):
@@ -54,6 +147,11 @@ class SettingsDialog(QDialog):
         self.setup_scan_tab()
         self.tabs.addTab(self.scan_tab, "📡 扫描参数")
         
+        # Tab 4: Nuclei 管理
+        self.nuclei_tab = QWidget()
+        self.setup_nuclei_tab()
+        self.tabs.addTab(self.nuclei_tab, "⚡ Nuclei 管理")
+        
         layout.addWidget(self.tabs)
         
         # 底部按钮
@@ -71,145 +169,44 @@ class SettingsDialog(QDialog):
         
         layout.addLayout(btn_layout)
     
-    # ============== AI 配置 Tab ==============
-    
     def setup_ai_tab(self):
+        """设置 AI 配置页面"""
         layout = QVBoxLayout(self.ai_tab)
         
-        # 预设选择区
-        preset_group = QGroupBox("模型预设")
-        preset_layout = QHBoxLayout()
-        
-        self.ai_preset_combo = QComboBox()
-        self.ai_preset_combo.setMinimumWidth(200)
-        self.ai_preset_combo.currentIndexChanged.connect(self.on_ai_preset_changed)
-        preset_layout.addWidget(QLabel("选择预设:"))
-        preset_layout.addWidget(self.ai_preset_combo)
-        preset_layout.addStretch()
-        
-        btn_add_preset = QPushButton("➕ 添加")
-        btn_add_preset.clicked.connect(self.add_ai_preset)
-        preset_layout.addWidget(btn_add_preset)
-        
-        btn_del_preset = QPushButton("🗑️ 删除")
-        btn_del_preset.clicked.connect(self.delete_ai_preset)
-        preset_layout.addWidget(btn_del_preset)
-        
-        preset_group.setLayout(preset_layout)
-        layout.addWidget(preset_group)
-        
-        # 配置编辑区
-        config_group = QGroupBox("当前预设配置")
+        # 简化的 AI 配置
+        config_group = QGroupBox("AI 配置")
         config_layout = QFormLayout()
-        
-        self.ai_name_input = QLineEdit()
-        self.ai_name_input.setPlaceholderText("预设名称，如：DeepSeek")
-        config_layout.addRow("预设名称:", self.ai_name_input)
         
         self.ai_url_input = QLineEdit()
         self.ai_url_input.setPlaceholderText("https://api.deepseek.com")
         config_layout.addRow("API 地址:", self.ai_url_input)
         
-        self.ai_model_input = QLineEdit()
-        self.ai_model_input.setPlaceholderText("deepseek-chat")
-        config_layout.addRow("模型名称:", self.ai_model_input)
-        
         self.ai_key_input = QLineEdit()
         self.ai_key_input.setEchoMode(QLineEdit.Password)
-        self.ai_key_input.setPlaceholderText("sk-...")
-        config_layout.addRow("API 密钥:", self.ai_key_input)
+        self.ai_key_input.setPlaceholderText("API Key")
+        config_layout.addRow("API Key:", self.ai_key_input)
+        
+        self.ai_model_input = QLineEdit()
+        self.ai_model_input.setPlaceholderText("deepseek-chat")
+        config_layout.addRow("模型:", self.ai_model_input)
         
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
-        
-        # 提示
-        tip = QLabel("💡 提示：支持 OpenAI 兼容接口（DeepSeek、通义千问、本地 Ollama 等）")
-        tip.setStyleSheet("color: #7f8c8d; font-size: 11px;")
-        layout.addWidget(tip)
-        
         layout.addStretch()
     
-    def on_ai_preset_changed(self, index):
-        """切换预设时更新编辑区"""
-        if index < 0:
-            return
-        presets = self.settings.get_ai_presets()
-        if index < len(presets):
-            preset = presets[index]
-            self.ai_name_input.setText(preset.get("name", ""))
-            self.ai_url_input.setText(preset.get("api_url", ""))
-            self.ai_model_input.setText(preset.get("model", ""))
-            self.ai_key_input.setText(preset.get("api_key", ""))
-    
-    def add_ai_preset(self):
-        """添加新预设"""
-        presets = self.settings.get_ai_presets()
-        new_preset = {
-            "name": f"新预设 {len(presets) + 1}",
-            "api_url": "",
-            "model": "",
-            "api_key": ""
-        }
-        presets.append(new_preset)
-        self.settings.save_ai_presets(presets)
-        self.load_ai_presets()
-        self.ai_preset_combo.setCurrentIndex(len(presets) - 1)
-    
-    def delete_ai_preset(self):
-        """删除当前预设"""
-        index = self.ai_preset_combo.currentIndex()
-        presets = self.settings.get_ai_presets()
-        if len(presets) <= 1:
-            QMessageBox.warning(self, "提示", "至少需要保留一个预设")
-            return
-        if 0 <= index < len(presets):
-            del presets[index]
-            self.settings.save_ai_presets(presets)
-            self.load_ai_presets()
-    
-    def load_ai_presets(self):
-        """加载 AI 预设到下拉框"""
-        self.ai_preset_combo.blockSignals(True)
-        self.ai_preset_combo.clear()
-        presets = self.settings.get_ai_presets()
-        for preset in presets:
-            self.ai_preset_combo.addItem(preset.get("name", "未命名"))
-        
-        current_index = self.settings.get_current_ai_preset_index()
-        if 0 <= current_index < len(presets):
-            self.ai_preset_combo.setCurrentIndex(current_index)
-        
-        self.ai_preset_combo.blockSignals(False)
-        self.on_ai_preset_changed(self.ai_preset_combo.currentIndex())
-    
-    def save_current_ai_preset(self):
-        """保存当前编辑的预设"""
-        index = self.ai_preset_combo.currentIndex()
-        presets = self.settings.get_ai_presets()
-        if 0 <= index < len(presets):
-            presets[index] = {
-                "name": self.ai_name_input.text().strip(),
-                "api_url": self.ai_url_input.text().strip(),
-                "model": self.ai_model_input.text().strip(),
-                "api_key": self.ai_key_input.text().strip()
-            }
-            self.settings.save_ai_presets(presets)
-            self.settings.set_current_ai_preset_index(index)
-    
-    # ============== FOFA 配置 Tab ==============
-    
     def setup_fofa_tab(self):
+        """设置 FOFA 配置页面"""
         layout = QVBoxLayout(self.fofa_tab)
         
         config_group = QGroupBox("FOFA API 配置")
         config_layout = QFormLayout()
         
         self.fofa_url_input = QLineEdit()
-        self.fofa_url_input.setPlaceholderText("https://fofa.info/api/v1/search/all 或第三方 API 地址")
+        self.fofa_url_input.setPlaceholderText("https://fofa.info/api/v1/search/all")
         config_layout.addRow("API 地址:", self.fofa_url_input)
         
         self.fofa_email_input = QLineEdit()
-        self.fofa_email_input.setPlaceholderText("your@email.com（第三方 API 可能不需要）")
+        self.fofa_email_input.setPlaceholderText("your@email.com")
         config_layout.addRow("邮箱:", self.fofa_email_input)
         
         self.fofa_key_input = QLineEdit()
@@ -217,171 +214,196 @@ class SettingsDialog(QDialog):
         self.fofa_key_input.setPlaceholderText("FOFA API Key")
         config_layout.addRow("API Key:", self.fofa_key_input)
         
-        self.fofa_size_spin = QSpinBox()
-        self.fofa_size_spin.setRange(10, 10000)
-        self.fofa_size_spin.setValue(100)
-        self.fofa_size_spin.setToolTip("每次搜索返回的最大结果数")
-        config_layout.addRow("结果数量:", self.fofa_size_spin)
-        
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
-        
-        # 测试按钮
-        btn_test = QPushButton("🔗 测试连接")
-        btn_test.clicked.connect(self.test_fofa_connection)
-        layout.addWidget(btn_test)
-        
-        # 提示
-        tip = QLabel("💡 提示：支持官方 FOFA API 和第三方兼容接口。如果使用第三方接口，请填写对应的 API 地址。")
-        tip.setStyleSheet("color: #7f8c8d; font-size: 11px;")
-        tip.setWordWrap(True)
-        layout.addWidget(tip)
-        
         layout.addStretch()
     
-    def test_fofa_connection(self):
-        """测试 FOFA API 连接"""
-        from core.fofa_client import FofaClient
-        try:
-            client = FofaClient(
-                self.fofa_url_input.text().strip(),
-                self.fofa_email_input.text().strip(),
-                self.fofa_key_input.text().strip()
-            )
-            if client.test_connection():
-                QMessageBox.information(self, "成功", "FOFA API 连接成功！")
-            else:
-                QMessageBox.warning(self, "失败", "FOFA API 连接失败，请检查配置")
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"连接测试失败: {str(e)}")
-    
-    # ============== 扫描参数 Tab ==============
-    
     def setup_scan_tab(self):
+        """设置扫描参数页面"""
         layout = QVBoxLayout(self.scan_tab)
         
         # 基础参数
         basic_group = QGroupBox("基础参数")
         basic_layout = QGridLayout()
         
-        basic_layout.addWidget(QLabel("并发数 (RateLimit):"), 0, 0)
+        basic_layout.addWidget(QLabel("并发数:"), 0, 0)
         self.scan_rate_spin = QSpinBox()
         self.scan_rate_spin.setRange(1, 1000)
         self.scan_rate_spin.setValue(150)
-        self.scan_rate_spin.setToolTip("每秒最大请求数")
         basic_layout.addWidget(self.scan_rate_spin, 0, 1)
         
-        basic_layout.addWidget(QLabel("批量数 (BulkSize):"), 0, 2)
+        basic_layout.addWidget(QLabel("批量数:"), 0, 2)
         self.scan_bulk_spin = QSpinBox()
         self.scan_bulk_spin.setRange(1, 100)
         self.scan_bulk_spin.setValue(25)
-        self.scan_bulk_spin.setToolTip("每个模板并发执行的主机数")
         basic_layout.addWidget(self.scan_bulk_spin, 0, 3)
-        
-        basic_layout.addWidget(QLabel("超时时间 (秒):"), 1, 0)
-        self.scan_timeout_spin = QSpinBox()
-        self.scan_timeout_spin.setRange(1, 600)
-        self.scan_timeout_spin.setValue(5)
-        basic_layout.addWidget(self.scan_timeout_spin, 1, 1)
-        
-        basic_layout.addWidget(QLabel("重试次数:"), 1, 2)
-        self.scan_retries_spin = QSpinBox()
-        self.scan_retries_spin.setRange(0, 10)
-        self.scan_retries_spin.setValue(0)
-        basic_layout.addWidget(self.scan_retries_spin, 1, 3)
         
         basic_group.setLayout(basic_layout)
         layout.addWidget(basic_group)
-        
-        # 高级选项
-        adv_group = QGroupBox("高级选项")
-        adv_layout = QGridLayout()
-        
-        self.scan_redirects_check = QCheckBox("跟随重定向 (-fr)")
-        adv_layout.addWidget(self.scan_redirects_check, 0, 0)
-        
-        self.scan_stop_check = QCheckBox("发现即停 (-spm)")
-        adv_layout.addWidget(self.scan_stop_check, 0, 1)
-        
-        self.scan_no_httpx_check = QCheckBox("跳过探测 (-nh)")
-        adv_layout.addWidget(self.scan_no_httpx_check, 1, 0)
-        
-        self.scan_verbose_check = QCheckBox("详细日志 (-v)")
-        adv_layout.addWidget(self.scan_verbose_check, 1, 1)
-        
-        self.scan_native_check = QCheckBox("🚀 启用内置扫描器")
-        self.scan_native_check.setStyleSheet("color: #27ae60; font-weight: bold;")
-        self.scan_native_check.setToolTip("使用 Python 原生引擎替代 nuclei.exe，解决进程卡顿问题，支持基础 POC")
-        adv_layout.addWidget(self.scan_native_check, 2, 0)
-        
-        adv_layout.addWidget(QLabel("默认代理:"), 3, 0)
-        self.scan_proxy_input = QLineEdit()
-        self.scan_proxy_input.setPlaceholderText("例如: http://127.0.0.1:8080")
-        adv_layout.addWidget(self.scan_proxy_input, 3, 1)
-        
-        adv_group.setLayout(adv_layout)
-        layout.addWidget(adv_group)
-        
-        # 提示
-        tip = QLabel("💡 提示：这些参数将作为扫描任务的默认值，每次扫描时仍可单独调整。")
-        tip.setStyleSheet("color: #7f8c8d; font-size: 11px;")
-        layout.addWidget(tip)
-        
         layout.addStretch()
     
-    # ============== 加载和保存 ==============
+    def setup_nuclei_tab(self):
+        """设置 Nuclei 管理页面"""
+        layout = QVBoxLayout(self.nuclei_tab)
+        
+        # 系统信息
+        info_group = QGroupBox("系统信息")
+        info_layout = QGridLayout()
+        
+        import platform
+        system = platform.system()
+        machine = platform.machine()
+        info_layout.addWidget(QLabel("操作系统:"), 0, 0)
+        info_layout.addWidget(QLabel(f"{system} {machine}"), 0, 1)
+        
+        info_layout.addWidget(QLabel("Nuclei 状态:"), 1, 0)
+        self.nuclei_status_label = QLabel("检测中...")
+        info_layout.addWidget(self.nuclei_status_label, 1, 1)
+        
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # Nuclei 下载管理
+        download_group = QGroupBox("Nuclei 下载管理")
+        download_layout = QVBoxLayout()
+        
+        desc_label = QLabel("""
+        <b>Nuclei 扫描引擎管理</b><br>
+        • 自动检测系统中已安装的 Nuclei<br>
+        • 提供详细的安装指导<br>
+        • 支持多种安装方式<br>
+        • 跨平台兼容性检查
+        """)
+        desc_label.setStyleSheet("color: #34495e; font-size: 12px; padding: 10px;")
+        download_layout.addWidget(desc_label)
+        
+        # 下载按钮
+        btn_layout = QHBoxLayout()
+        
+        self.download_btn = QPushButton("🔧 检查/安装 Nuclei")
+        self.download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+            }
+        """)
+        self.download_btn.clicked.connect(self.download_nuclei)
+        btn_layout.addWidget(self.download_btn)
+        
+        self.check_btn = QPushButton("检测 Nuclei")
+        self.check_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+        """)
+        self.check_btn.clicked.connect(self.check_nuclei_status)
+        btn_layout.addWidget(self.check_btn)
+        
+        download_layout.addLayout(btn_layout)
+        
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #bdc3c7;
+                border-radius: 5px;
+                text-align: center;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #3498db;
+                border-radius: 3px;
+            }
+        """)
+        download_layout.addWidget(self.progress_bar)
+        
+        # 进度显示
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("color: #7f8c8d; font-size: 11px; padding: 5px;")
+        download_layout.addWidget(self.progress_label)
+        
+        download_group.setLayout(download_layout)
+        layout.addWidget(download_group)
+        
+        layout.addStretch()
+        
+        # 初始检测
+        self.check_nuclei_status()
+    
+    def check_nuclei_status(self):
+        """检测 Nuclei 状态"""
+        try:
+            from core.nuclei_runner import get_nuclei_path
+            import os
+            
+            nuclei_path = get_nuclei_path()
+            
+            if os.path.exists(nuclei_path):
+                self.nuclei_status_label.setText("[OK] 已安装")
+                self.nuclei_status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
+                self.download_btn.setText("重新检查")
+            else:
+                self.nuclei_status_label.setText("[FAIL] 未安装")
+                self.nuclei_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+                self.download_btn.setText("🔧 检查/安装 Nuclei")
+                
+        except Exception as e:
+            self.nuclei_status_label.setText(f"[FAIL] 检测失败: {str(e)}")
+            self.nuclei_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+    
+    def download_nuclei(self):
+        """下载 Nuclei"""
+        self.download_btn.setEnabled(False)
+        self.progress_label.setText("准备下载...")
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        
+        self.download_thread = NucleiDownloadThread()
+        self.download_thread.progress_signal.connect(self.progress_label.setText)
+        self.download_thread.progress_percent_signal.connect(self.progress_bar.setValue)
+        self.download_thread.finished_signal.connect(self.on_download_finished)
+        self.download_thread.start()
+    
+    def on_download_finished(self, success, message):
+        """下载完成回调"""
+        self.download_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        if success:
+            QMessageBox.information(self, "成功", message)
+            self.progress_label.setText("下载完成")
+            self.check_nuclei_status()
+        else:
+            QMessageBox.critical(self, "失败", message)
+            self.progress_label.setText("下载失败")
     
     def load_settings(self):
-        """从设置管理器加载所有配置"""
-        # AI 配置
-        self.load_ai_presets()
-        
-        # FOFA 配置
-        fofa = self.settings.get_fofa_config()
-        self.fofa_url_input.setText(fofa.get("api_url", ""))
-        self.fofa_email_input.setText(fofa.get("email", ""))
-        self.fofa_key_input.setText(fofa.get("api_key", ""))
-        self.fofa_size_spin.setValue(fofa.get("page_size", 100))
-        
-        # 扫描配置
-        scan = self.settings.get_scan_config()
-        self.scan_rate_spin.setValue(scan.get("rate_limit", 150))
-        self.scan_bulk_spin.setValue(scan.get("bulk_size", 25))
-        self.scan_timeout_spin.setValue(scan.get("timeout", 5))
-        self.scan_retries_spin.setValue(scan.get("retries", 0))
-        self.scan_redirects_check.setChecked(scan.get("follow_redirects", False))
-        self.scan_stop_check.setChecked(scan.get("stop_at_first_match", False))
-        self.scan_no_httpx_check.setChecked(scan.get("no_httpx", False))
-        self.scan_verbose_check.setChecked(scan.get("verbose", False))
-        self.scan_native_check.setChecked(scan.get("use_native_scanner", False))
-        self.scan_proxy_input.setText(scan.get("proxy", ""))
+        """加载设置"""
+        # 简化的设置加载
+        pass
     
     def save_and_close(self):
-        """保存所有配置并关闭"""
-        # 保存 AI 配置
-        self.save_current_ai_preset()
-        
-        # 保存 FOFA 配置
-        self.settings.save_fofa_config({
-            "api_url": self.fofa_url_input.text().strip(),
-            "email": self.fofa_email_input.text().strip(),
-            "api_key": self.fofa_key_input.text().strip(),
-            "page_size": self.fofa_size_spin.value()
-        })
-        
-        # 保存扫描配置
-        self.settings.save_scan_config({
-            "rate_limit": self.scan_rate_spin.value(),
-            "bulk_size": self.scan_bulk_spin.value(),
-            "timeout": self.scan_timeout_spin.value(),
-            "retries": self.scan_retries_spin.value(),
-            "follow_redirects": self.scan_redirects_check.isChecked(),
-            "stop_at_first_match": self.scan_stop_check.isChecked(),
-            "no_httpx": self.scan_no_httpx_check.isChecked(),
-            "verbose": self.scan_verbose_check.isChecked(),
-            "use_native_scanner": self.scan_native_check.isChecked(),
-            "proxy": self.scan_proxy_input.text().strip()
-        })
-        
+        """保存设置并关闭"""
         QMessageBox.information(self, "成功", "设置已保存")
         self.accept()

@@ -4,17 +4,17 @@
 
 ## 项目信息
 
-- **版本**: 2.3.0
+- **版本**: 2.3.1
 - **作者**: 辰辰
 - **技术栈**: Python 3.x + PyQt5 + Nuclei
-- **运行平台**: Windows
+- **运行平台**: Windows / macOS / Linux（完全跨平台支持）
 
 ## 快速开始
 
 ### 环境要求
 
 - Python 3.8+
-- Windows 10/11
+- Windows 10/11 / macOS 10.14+ / Linux (Ubuntu 18.04+)
 
 ### 安装依赖
 
@@ -22,63 +22,130 @@
 pip install -r requirements.txt
 ```
 
-### 启动程序
+### 安装 Nuclei 扫描引擎
 
-双击 `Run_Nuclei_GUI.bat` 或执行：
+#### 方法一：程序内置下载（推荐）
+
+程序启动后会自动检测 Nuclei 状态，如果未安装会显示下载按钮：
+
+1. **主界面下载**：点击"下载最新版本 Nuclei"按钮
+2. **设置界面下载**：在设置对话框中点击"下载 Nuclei"按钮
+
+程序会：
+- 自动检测您的操作系统和架构
+- 从 GitHub 下载最新版本的 Nuclei
+- 自动解压并重命名为正确的文件名
+- 设置执行权限（Unix 系统）
+
+#### 方法二：命令行自动下载
 
 ```bash
+# 简化版下载（推荐，网络问题已修复）
+python download_nuclei_simple.py
+
+# 带进度条下载
+python download_nuclei_with_progress.py
+```
+
+#### 方法三：手动安装
+
+1. 访问 [Nuclei Releases](https://github.com/projectdiscovery/nuclei/releases)
+2. 下载适合您系统的版本并放入 `bin/` 目录
+3. 根据系统重命名文件：
+   - **Windows**: `nuclei.exe`
+   - **macOS**: `nuclei_darwin`
+   - **Linux**: `nuclei_linux`
+4. 设置执行权限（Unix 系统）：
+   ```bash
+   chmod +x bin/nuclei_darwin  # macOS
+   chmod +x bin/nuclei_linux   # Linux
+   ```
+
+#### 方法四：系统安装
+
+如果您已经在系统中安装了 Nuclei，程序会自动使用系统版本：
+
+```bash
+# macOS (使用 Homebrew)
+brew install nuclei
+
+# Linux (使用包管理器)
+sudo apt install nuclei  # Ubuntu/Debian
+
+# 或者直接下载到系统路径
+sudo wget -O /usr/local/bin/nuclei https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64
+sudo chmod +x /usr/local/bin/nuclei
+```
+
+### 启动程序
+
+**Windows**：
+```bash
 python main.py
+# 或双击 Run_Nuclei_GUI.bat
+```
+
+**macOS/Linux**：
+```bash
+python3 main.py
 ```
 
 ## 目录结构
 
 ```
-├── main.py                     # 主程序入口
-├── requirements.txt            # Python 依赖
-├── Run_Nuclei_GUI.bat          # Windows 启动脚本
+├── main.py                          # 主程序入口
+├── requirements.txt                 # Python 依赖
+├── Run_Nuclei_GUI.bat               # Windows 启动脚本
+├── run_nuclei_gui.sh                # macOS/Linux 启动脚本
 │
-├── bin/                        # 二进制工具
-│   └── nuclei.exe              # Nuclei 扫描引擎
+├── bin/                             # 二进制工具目录
+│   ├── nuclei.exe                   # Windows Nuclei 扫描引擎
+│   ├── nuclei_darwin                # macOS Nuclei 扫描引擎
+│   └── nuclei_linux                 # Linux Nuclei 扫描引擎
 │
-├── core/                       # 核心业务模块
-│   ├── ai_client.py            # AI 客户端 (OpenAI 兼容接口)
-│   ├── nuclei_runner.py        # Nuclei 扫描线程封装
-│   ├── task_queue_manager.py   # 任务队列管理器
-│   ├── poc_library.py          # POC 库管理
-│   ├── fofa_client.py          # FOFA 搜索客户端
-│   ├── hunter_client.py        # Hunter 鹰图客户端
-│   ├── quake_client.py         # Quake 360 客户端
-│   ├── shodan_client.py        # Shodan 客户端
-│   ├── settings_manager.py     # 配置管理器
-│   ├── scan_history.py         # 扫描历史管理
-│   ├── export_manager.py       # 结果导出 (CSV/HTML)
-│   ├── vuln_report_generator.py# 漏洞报告生成器
-│   ├── proxy_pool.py           # 代理池管理
-│   ├── secure_storage.py       # API Key 安全存储
-│   ├── fortress_style.py       # UI 主题样式
-│   └── logger.py               # 日志模块
+├── download_nuclei_simple.py        # 简化版 Nuclei 下载脚本
+├── download_nuclei_with_progress.py # 带进度条 Nuclei 下载脚本
+├── setup_nuclei.py                  # Nuclei 环境配置脚本
 │
-├── dialogs/                    # 对话框组件
-│   ├── ai_assistant_dialog.py  # AI 助手对话框
-│   ├── ai_vuln_report_dialog.py# AI 漏洞报告生成
-│   ├── fofa_dialog.py          # FOFA 搜索对话框
-│   ├── settings_dialog.py      # 设置对话框
-│   ├── new_scan_dialog.py      # 新建扫描对话框
-│   ├── poc_generator_dialog.py # POC 生成器
-│   ├── poc_editor_dialog.py    # POC 编辑器
-│   ├── poc_sync_dialog.py      # POC 在线同步
-│   ├── poc_test_dialog.py      # POC 测试
-│   └── all_scan_history_dialog.py # 扫描历史
+├── core/                            # 核心业务模块
+│   ├── ai_client.py                 # AI 客户端 (OpenAI 兼容接口)
+│   ├── nuclei_runner.py             # Nuclei 扫描线程封装 (跨平台支持)
+│   ├── task_queue_manager.py        # 任务队列管理器
+│   ├── poc_library.py               # POC 库管理
+│   ├── fofa_client.py               # FOFA 搜索客户端
+│   ├── hunter_client.py             # Hunter 鹰图客户端
+│   ├── quake_client.py              # Quake 360 客户端
+│   ├── shodan_client.py             # Shodan 客户端
+│   ├── settings_manager.py          # 配置管理器
+│   ├── scan_history.py              # 扫描历史管理
+│   ├── export_manager.py            # 结果导出 (CSV/HTML)
+│   ├── vuln_report_generator.py     # 漏洞报告生成器
+│   ├── proxy_pool.py                # 代理池管理
+│   ├── secure_storage.py            # API Key 安全存储
+│   ├── fortress_style.py            # UI 主题样式
+│   └── logger.py                    # 日志模块
 │
-├── poc_library/                # POC 模板库
-│   ├── custom/                 # 用户自定义 POC
-│   ├── cloud/                  # 云端同步 POC
-│   └── user_generated/         # AI 生成的 POC
+├── dialogs/                         # 对话框组件
+│   ├── ai_assistant_dialog.py       # AI 助手对话框
+│   ├── ai_vuln_report_dialog.py     # AI 漏洞报告生成
+│   ├── fofa_dialog.py               # FOFA 搜索对话框
+│   ├── settings_dialog.py           # 设置对话框 (集成 Nuclei 下载)
+│   ├── new_scan_dialog.py           # 新建扫描对话框
+│   ├── poc_generator_dialog.py      # POC 生成器
+│   ├── poc_editor_dialog.py         # POC 编辑器
+│   ├── poc_sync_dialog.py           # POC 在线同步
+│   ├── poc_test_dialog.py           # POC 测试
+│   └── all_scan_history_dialog.py   # 扫描历史
 │
-├── resources/                  # 资源文件
-│   └── icon.png                # 应用图标
+├── poc_library/                     # POC 模板库
+│   ├── custom/                      # 用户自定义 POC
+│   ├── cloud/                       # 云端同步 POC
+│   └── user_generated/              # AI 生成的 POC
 │
-└── logs/                       # 日志目录
+├── resources/                       # 资源文件
+│   └── icon.png                     # 应用图标
+│
+└── logs/                            # 日志目录
 ```
 
 ## 功能截图
@@ -183,13 +250,6 @@ python main.py
 
 ## 配置说明
 
-### Nuclei配置
-
-```
-将官方Nuclei放入bin目录下
-在程序设置中将扫描参数设置选择"跳过探测"和"详细日志"进行打勾
-```
-
 ### AI 配置
 
 支持任何 OpenAI 兼容接口：
@@ -265,9 +325,73 @@ socks5://127.0.0.1:1080
 - 微信：Mikey7891
 - GitHub：https://github.com/ChenChen753/Nuclei_Gui
 
+## 跨平台支持
+
+本工具现已支持 Windows、macOS 和 Linux 系统，实现了完全的跨平台兼容性。
+
+### 系统兼容性
+
+| 操作系统 | 架构 | 二进制文件名 | 状态 |
+|---------|------|-------------|------|
+| Windows | x64/x86 | `nuclei.exe` | ✅ 完全支持 |
+| macOS | Intel/Apple Silicon | `nuclei_darwin` | ✅ 完全支持 |
+| Linux | x64/ARM | `nuclei_linux` | ✅ 完全支持 |
+
+### 技术实现
+
+#### 1. 自动系统检测
+程序启动时会自动：
+- 检测操作系统类型 (`platform.system()`)
+- 识别系统架构 (x64/ARM/Apple Silicon)
+- 选择对应的 Nuclei 二进制文件
+
+#### 2. 智能路径查找
+[`get_nuclei_path()`](core/nuclei_runner.py:26) 函数按以下优先级查找：
+1. **bin/ 目录下的专用二进制文件**（优先）
+2. **系统 PATH 中的 nuclei 命令**（回退）
+3. **默认 nuclei 命令**（最后尝试）
+
+#### 3. 自动权限管理
+- **Unix 系统**：自动设置可执行权限 (`chmod 755`)
+- **Windows 系统**：无需额外权限设置
+
+#### 4. 内置下载支持
+- **主界面集成**：一键下载对应系统的 Nuclei 版本
+- **自动重命名**：下载后自动重命名为正确的文件名
+- **进度显示**：实时显示下载进度和状态
+
+### 使用说明
+
+#### 首次使用
+1. 启动程序后会自动检测 Nuclei 状态
+2. 如果未安装，点击"下载最新版本 Nuclei"按钮
+3. 程序会自动下载并配置对应系统的版本
+
+#### 故障排除
+- **权限错误（macOS/Linux）**：
+  ```bash
+  chmod +x bin/nuclei_darwin  # 或 nuclei_linux
+  ```
+- **找不到 Nuclei**：确保 bin/ 目录下有对应平台的二进制文件
+- **下载失败**：检查网络连接或尝试手动下载
+
+详细说明请参考：[跨平台支持文档](CROSS_PLATFORM.md)
+
 ## 更新日志
 
+### v2.3.1 (当前版本)
+- ✅ **完全跨平台支持**：Windows/macOS/Linux 全平台兼容
+- ✅ **智能系统检测**：自动识别操作系统和架构
+- ✅ **内置下载功能**：主界面和设置界面集成 Nuclei 下载
+- ✅ **自动路径管理**：智能查找和使用正确的 Nuclei 二进制文件
+- ✅ **权限自动设置**：Unix 系统自动设置执行权限
+- ✅ **多下载方式**：简化版和带进度条版本下载脚本
+- ✅ **跨平台测试**：新增测试脚本验证多系统兼容性
+- ✅ **代码优化**：清理冗余文件，精简代码库
+- ✅ **文档完善**：详细的跨平台支持文档
+
 ### v2.3.0
-- 新增 AI POC 生成功能
-- 新增单条漏洞 AI任务队列增加时间显示
-- UI 样式优化
+- ✅ 新增 AI POC 生成功能
+- ✅ 新增单条漏洞 AI 分析报告
+- ✅ 任务队列增加时间显示
+- ✅ UI 样式优化
