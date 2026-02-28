@@ -39,6 +39,39 @@ def get_current_version():
     return CURRENT_VERSION
 
 
+def get_system_proxies():
+    """获取系统代理设置"""
+    proxies = {}
+
+    # 从环境变量获取代理
+    http_proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
+    https_proxy = os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')
+
+    if http_proxy:
+        proxies['http'] = http_proxy
+    if https_proxy:
+        proxies['https'] = https_proxy
+
+    # 如果没有环境变量，尝试从 Windows 注册表获取
+    if not proxies and sys.platform == 'win32':
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                r'Software\Microsoft\Windows\CurrentVersion\Internet Settings') as key:
+                proxy_enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
+                if proxy_enable:
+                    proxy_server, _ = winreg.QueryValueEx(key, 'ProxyServer')
+                    if proxy_server:
+                        if not proxy_server.startswith('http'):
+                            proxy_server = f'http://{proxy_server}'
+                        proxies['http'] = proxy_server
+                        proxies['https'] = proxy_server
+        except (WindowsError, FileNotFoundError, OSError):
+            pass
+
+    return proxies if proxies else None
+
+
 def compare_versions(v1, v2):
     """
     比较版本号
@@ -87,7 +120,10 @@ class UpdateCheckThread(QThread):
                 'User-Agent': 'Nuclei-GUI-Updater'
             }
 
-            response = requests.get(GITHUB_API_URL, headers=headers, timeout=self.timeout)
+            # 获取系统代理
+            proxies = get_system_proxies()
+
+            response = requests.get(GITHUB_API_URL, headers=headers, timeout=self.timeout, proxies=proxies)
 
             if response.status_code == 200:
                 data = response.json()
@@ -159,7 +195,8 @@ class UpdateDownloadThread(QThread):
             self.progress_signal.emit(10, "正在下载更新包...")
 
             headers = {'User-Agent': 'Nuclei-GUI-Updater'}
-            response = requests.get(self.download_url, headers=headers, stream=True, timeout=60)
+            proxies = get_system_proxies()
+            response = requests.get(self.download_url, headers=headers, stream=True, timeout=60, proxies=proxies)
 
             if response.status_code != 200:
                 self.finished_signal.emit(False, f"下载失败: HTTP {response.status_code}")

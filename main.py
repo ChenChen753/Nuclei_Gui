@@ -2176,10 +2176,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.No
             )
             if reply == QMessageBox.Yes:
-                self.show_settings_dialog()
-                # 切换到更新 Tab
-                if hasattr(self, '_settings_dialog') and self._settings_dialog:
-                    self._settings_dialog.tabs.setCurrentIndex(4)  # 更新设置 Tab
+                # 切换到主界面的设置页面，并选中更新设置 Tab
+                self._switch_page(5)  # 设置页面索引
+                # 找到设置页面中的 Tab 控件并切换到更新设置
+                if hasattr(self, 'settings_page'):
+                    tabs = self.settings_page.findChild(QTabWidget)
+                    if tabs:
+                        tabs.setCurrentIndex(5)  # 更新设置 Tab 索引
 
     def _pause_selected_task(self):
         """暂停选中的任务"""
