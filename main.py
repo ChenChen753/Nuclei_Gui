@@ -218,6 +218,9 @@ class MainWindow(QMainWindow):
         from core.task_queue_manager import get_task_queue_manager
         self.task_queue = get_task_queue_manager()
         self.task_queue.task_status_changed.connect(self._on_task_status_changed)
+
+        # 启动时检查更新（如果启用）
+        self._check_update_on_startup()
     
     def _set_window_icon(self):
         """设置窗口图标（会显示在标题栏和任务栏）"""
@@ -1282,12 +1285,141 @@ class MainWindow(QMainWindow):
         
         nuclei_layout.addWidget(download_group)
         nuclei_layout.addStretch()
-        
+
         settings_tabs.addTab(nuclei_tab, "Nuclei 管理")
-        
+
         # 初始检测 Nuclei 状态
         self._check_nuclei_status()
-        
+
+        # Tab 6: 更新设置
+        update_tab = QWidget()
+        update_layout = QVBoxLayout(update_tab)
+        update_layout.setContentsMargins(25, 25, 25, 25)
+        update_layout.setSpacing(15)
+
+        # 版本信息组
+        version_group = QGroupBox("版本信息")
+        version_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-size: 14px;
+                font-weight: bold;
+                color: {FORTRESS_COLORS['text_primary']};
+                border: 1px solid {FORTRESS_COLORS['nav_border']};
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+            }}
+        """)
+        version_layout = QGridLayout(version_group)
+        version_layout.setSpacing(10)
+
+        from core.updater import get_current_version
+        version_layout.addWidget(QLabel("当前版本:"), 0, 0)
+        self.update_current_version_label = QLabel(f"v{get_current_version()}")
+        self.update_current_version_label.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['btn_primary']};")
+        version_layout.addWidget(self.update_current_version_label, 0, 1)
+
+        version_layout.addWidget(QLabel("最新版本:"), 1, 0)
+        self.update_latest_version_label = QLabel("未检查")
+        self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']};")
+        version_layout.addWidget(self.update_latest_version_label, 1, 1)
+
+        update_layout.addWidget(version_group)
+
+        # 更新设置组
+        update_settings_group = QGroupBox("更新设置")
+        update_settings_group.setStyleSheet(version_group.styleSheet())
+        update_settings_layout = QVBoxLayout(update_settings_group)
+
+        self.auto_update_checkbox = QCheckBox("启动时自动检查更新")
+        self.auto_update_checkbox.setChecked(self.settings.get_auto_check_update())
+        self.auto_update_checkbox.setToolTip("关闭后需要手动点击检查更新按钮")
+        update_settings_layout.addWidget(self.auto_update_checkbox)
+
+        preserve_label = QLabel(
+            "<b>更新时保留的数据:</b><br>"
+            "• 扫描历史数据库 (scan_history.db, history.db)<br>"
+            "• 自定义 POC (poc_library/custom, poc_library/user_generated)<br>"
+            "• 配置文件和日志"
+        )
+        preserve_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 10px; background: {FORTRESS_COLORS['nav_bg']}; border-radius: 4px;")
+        update_settings_layout.addWidget(preserve_label)
+
+        update_layout.addWidget(update_settings_group)
+
+        # 更新操作组
+        update_action_group = QGroupBox("更新操作")
+        update_action_group.setStyleSheet(version_group.styleSheet())
+        update_action_layout = QVBoxLayout(update_action_group)
+
+        btn_row = QHBoxLayout()
+        self.check_update_btn = self._create_fortress_button("检查更新", "info")
+        self.check_update_btn.setMinimumWidth(120)
+        self.check_update_btn.clicked.connect(self._check_for_updates)
+        btn_row.addWidget(self.check_update_btn)
+
+        self.do_update_btn = self._create_fortress_button("下载更新", "success")
+        self.do_update_btn.setMinimumWidth(120)
+        self.do_update_btn.setEnabled(False)
+        self.do_update_btn.clicked.connect(self._do_update)
+        btn_row.addWidget(self.do_update_btn)
+
+        btn_row.addStretch()
+        update_action_layout.addLayout(btn_row)
+
+        # 更新进度条
+        self.update_progress_bar = QProgressBar()
+        self.update_progress_bar.setVisible(False)
+        self.update_progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 2px solid {FORTRESS_COLORS['nav_border']};
+                border-radius: 5px;
+                text-align: center;
+                font-weight: bold;
+            }}
+            QProgressBar::chunk {{
+                background-color: {FORTRESS_COLORS['btn_success']};
+                border-radius: 3px;
+            }}
+        """)
+        update_action_layout.addWidget(self.update_progress_bar)
+
+        # 状态标签
+        self.update_status_label = QLabel("")
+        self.update_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 5px;")
+        update_action_layout.addWidget(self.update_status_label)
+
+        # 更新日志
+        self.release_notes_text = QTextEdit()
+        self.release_notes_text.setReadOnly(True)
+        self.release_notes_text.setMaximumHeight(120)
+        self.release_notes_text.setPlaceholderText("更新日志将在检查更新后显示...")
+        self.release_notes_text.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid {FORTRESS_COLORS['nav_border']};
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 11px;
+                background: {FORTRESS_COLORS['content_bg']};
+                color: {FORTRESS_COLORS['text_primary']};
+            }}
+        """)
+        update_action_layout.addWidget(self.release_notes_text)
+
+        update_layout.addWidget(update_action_group)
+        update_layout.addStretch()
+
+        settings_tabs.addTab(update_tab, "更新设置")
+
+        # 存储下载信息
+        self._update_download_url = None
+        self._update_version = None
+
         layout.addWidget(settings_tabs)
 
         
@@ -2016,8 +2148,39 @@ class MainWindow(QMainWindow):
                 # if self.btn_stop.isEnabled(): # 移除此检查，确保总是尝试处理
                 self.scan_finished(status="用户停止")
 
+    def _check_update_on_startup(self):
+        """启动时检查更新"""
+        # 检查是否启用自动更新检查
+        auto_check = self.settings.get_auto_check_update()
+        if not auto_check:
+            return
 
-    
+        from core.updater import UpdateCheckThread, get_current_version
+
+        self._startup_update_thread = UpdateCheckThread(timeout=5)
+        self._startup_update_thread.check_finished.connect(self._on_startup_update_check)
+        self._startup_update_thread.start()
+
+    def _on_startup_update_check(self, has_update, latest_version, download_url, release_notes):
+        """启动时更新检查完成"""
+        if has_update:
+            from core.updater import get_current_version
+            reply = QMessageBox.question(
+                self,
+                "发现新版本",
+                f"发现新版本 v{latest_version}（当前 v{get_current_version()}）\n\n"
+                f"更新内容:\n{release_notes[:200]}{'...' if len(release_notes) > 200 else ''}\n\n"
+                "是否打开设置页面进行更新？\n"
+                "（可在设置中关闭启动时自动检查）",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.show_settings_dialog()
+                # 切换到更新 Tab
+                if hasattr(self, '_settings_dialog') and self._settings_dialog:
+                    self._settings_dialog.tabs.setCurrentIndex(4)  # 更新设置 Tab
+
     def _pause_selected_task(self):
         """暂停选中的任务"""
         from core.task_queue_manager import get_task_queue_manager, TaskStatus
@@ -3218,21 +3381,135 @@ class MainWindow(QMainWindow):
                     presets[current_index]["api_url"] = self.settings_ai_url.text().strip()
                     presets[current_index]["api_key"] = self.settings_ai_key.text().strip()
                     presets[current_index]["model"] = self.settings_ai_model.currentText().strip()
-                    
+
                     # 保存到设置
                     self.settings.save_ai_presets(presets)
-                    
+
                     # 保存当前选中的预设索引
                     self.settings.set_current_ai_preset_index(current_index)
-                    
+
                     # 刷新下拉框以反映更新
                     self._load_ai_presets_to_settings_combo()
                     self.settings_ai_preset.setCurrentIndex(current_index)
-                    
+
                     # 同时刷新AI页的预设下拉框
                     self._load_ai_presets_to_combo()
-        
+
+        # 保存更新设置
+        if hasattr(self, 'auto_update_checkbox'):
+            self.settings.set_auto_check_update(self.auto_update_checkbox.isChecked())
+
         QMessageBox.information(self, "成功", "设置已保存")
+
+    def _check_for_updates(self):
+        """检查更新"""
+        self.check_update_btn.setEnabled(False)
+        self.update_status_label.setText("正在检查更新...")
+        self.update_latest_version_label.setText("检查中...")
+        self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['btn_warning']};")
+
+        from core.updater import UpdateCheckThread
+        self._update_check_thread = UpdateCheckThread()
+        self._update_check_thread.check_finished.connect(self._on_update_check_finished)
+        self._update_check_thread.error_signal.connect(self._on_update_check_error)
+        self._update_check_thread.start()
+
+    def _on_update_check_finished(self, has_update, latest_version, download_url, release_notes):
+        """检查更新完成"""
+        self.check_update_btn.setEnabled(True)
+        self.update_latest_version_label.setText(f"v{latest_version}")
+
+        if has_update:
+            self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['btn_success']}; font-weight: bold;")
+            self.update_status_label.setText(f"发现新版本 v{latest_version}，可以更新！")
+            self.do_update_btn.setEnabled(True)
+            self._update_download_url = download_url
+            self._update_version = latest_version
+        else:
+            self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']};")
+            self.update_status_label.setText("当前已是最新版本")
+            self.do_update_btn.setEnabled(False)
+
+        self.release_notes_text.setText(release_notes if release_notes else "无更新说明")
+
+    def _on_update_check_error(self, error_msg):
+        """检查更新出错"""
+        self.check_update_btn.setEnabled(True)
+        self.update_latest_version_label.setText("检查失败")
+        self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']};")
+        self.update_status_label.setText(error_msg)
+
+    def _do_update(self):
+        """执行更新"""
+        if not self._update_download_url:
+            QMessageBox.warning(self, "警告", "没有可用的更新下载地址")
+            return
+
+        reply = QMessageBox.question(
+            self, "确认更新",
+            f"确定要更新到 v{self._update_version} 吗？\n\n"
+            "更新过程中会保留您的:\n"
+            "• 扫描历史数据\n"
+            "• 自定义 POC\n"
+            "• 配置文件\n\n"
+            "更新完成后需要重启程序。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        self.check_update_btn.setEnabled(False)
+        self.do_update_btn.setEnabled(False)
+        self.update_progress_bar.setVisible(True)
+        self.update_progress_bar.setValue(0)
+
+        from core.updater import UpdateDownloadThread
+        self._update_download_thread = UpdateDownloadThread(
+            self._update_download_url,
+            self._update_version
+        )
+        self._update_download_thread.progress_signal.connect(self._on_update_progress)
+        self._update_download_thread.finished_signal.connect(self._on_update_finished)
+        self._update_download_thread.start()
+
+    def _on_update_progress(self, percent, message):
+        """更新进度"""
+        self.update_progress_bar.setValue(percent)
+        self.update_status_label.setText(message)
+
+    def _on_update_finished(self, success, message):
+        """更新完成"""
+        self.check_update_btn.setEnabled(True)
+        self.update_progress_bar.setVisible(False)
+
+        if success:
+            QMessageBox.information(self, "更新成功", message)
+            self.update_status_label.setText("更新完成，请重启程序")
+            reply = QMessageBox.question(
+                self, "重启程序",
+                "更新已完成，是否立即重启程序？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self._restart_application()
+        else:
+            QMessageBox.critical(self, "更新失败", message)
+            self.update_status_label.setText("更新失败")
+            self.do_update_btn.setEnabled(True)
+
+    def _restart_application(self):
+        """重启应用程序"""
+        import sys
+        import os
+        python = sys.executable
+        script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "main.py"
+        )
+        os.execl(python, python, script)
 
     
     def _test_fofa_connection(self):
@@ -3261,13 +3538,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"测试失败: {str(e)}")
 
     # ================= 工具栏按钮事件 =================
-    
+
     def open_settings_dialog(self):
         """打开设置弹窗"""
-        dialog = SettingsDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
+        self._settings_dialog = SettingsDialog(self)
+        if self._settings_dialog.exec_() == QDialog.Accepted:
             # 重新加载扫描参数
             self.load_scan_config()
+
+    def show_settings_dialog(self):
+        """显示设置弹窗（别名方法）"""
+        self.open_settings_dialog()
     
     def open_fofa_dialog(self, query=None):
         """打开 FOFA 搜索弹窗"""

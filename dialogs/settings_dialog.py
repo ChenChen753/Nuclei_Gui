@@ -15,6 +15,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.settings_manager import get_settings
+from core.updater import (
+    UpdateCheckThread, UpdateDownloadThread,
+    get_current_version, PRESERVE_FILES, PRESERVE_DIRS
+)
 
 
 class NucleiDownloadThread(QThread):
@@ -151,7 +155,12 @@ class SettingsDialog(QDialog):
         self.nuclei_tab = QWidget()
         self.setup_nuclei_tab()
         self.tabs.addTab(self.nuclei_tab, "⚡ Nuclei 管理")
-        
+
+        # Tab 5: 更新设置
+        self.update_tab = QWidget()
+        self.setup_update_tab()
+        self.tabs.addTab(self.update_tab, "🔄 更新设置")
+
         layout.addWidget(self.tabs)
         
         # 底部按钮
@@ -400,10 +409,261 @@ class SettingsDialog(QDialog):
     
     def load_settings(self):
         """加载设置"""
-        # 简化的设置加载
-        pass
-    
+        # 加载更新设置
+        auto_update = self.settings.get_auto_check_update()
+        self.auto_update_checkbox.setChecked(auto_update)
+
     def save_and_close(self):
         """保存设置并关闭"""
+        # 保存更新设置
+        self.settings.set_auto_check_update(self.auto_update_checkbox.isChecked())
         QMessageBox.information(self, "成功", "设置已保存")
         self.accept()
+
+    def setup_update_tab(self):
+        """设置更新配置页面"""
+        layout = QVBoxLayout(self.update_tab)
+
+        # 当前版本信息
+        version_group = QGroupBox("版本信息")
+        version_layout = QGridLayout()
+
+        version_layout.addWidget(QLabel("当前版本:"), 0, 0)
+        self.current_version_label = QLabel(f"v{get_current_version()}")
+        self.current_version_label.setStyleSheet("font-weight: bold; color: #2980b9;")
+        version_layout.addWidget(self.current_version_label, 0, 1)
+
+        version_layout.addWidget(QLabel("最新版本:"), 1, 0)
+        self.latest_version_label = QLabel("未检查")
+        self.latest_version_label.setStyleSheet("color: #7f8c8d;")
+        version_layout.addWidget(self.latest_version_label, 1, 1)
+
+        version_group.setLayout(version_layout)
+        layout.addWidget(version_group)
+
+        # 更新设置
+        settings_group = QGroupBox("更新设置")
+        settings_layout = QVBoxLayout()
+
+        self.auto_update_checkbox = QCheckBox("启动时自动检查更新")
+        self.auto_update_checkbox.setChecked(True)
+        self.auto_update_checkbox.setToolTip("关闭后需要手动点击检查更新按钮")
+        settings_layout.addWidget(self.auto_update_checkbox)
+
+        preserve_label = QLabel(
+            "<b>更新时保留的数据:</b><br>"
+            "• 扫描历史数据库 (scan_history.db, history.db)<br>"
+            "• 自定义 POC (poc_library/custom, poc_library/user_generated)<br>"
+            "• 配置文件和日志"
+        )
+        preserve_label.setStyleSheet("color: #34495e; font-size: 11px; padding: 10px; background: #ecf0f1; border-radius: 4px;")
+        settings_layout.addWidget(preserve_label)
+
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+
+        # 更新操作
+        action_group = QGroupBox("更新操作")
+        action_layout = QVBoxLayout()
+
+        btn_layout = QHBoxLayout()
+
+        self.check_update_btn = QPushButton("🔍 检查更新")
+        self.check_update_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+            }
+        """)
+        self.check_update_btn.clicked.connect(self.check_for_updates)
+        btn_layout.addWidget(self.check_update_btn)
+
+        self.do_update_btn = QPushButton("⬇️ 下载更新")
+        self.do_update_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+            }
+        """)
+        self.do_update_btn.clicked.connect(self.do_update)
+        self.do_update_btn.setEnabled(False)
+        btn_layout.addWidget(self.do_update_btn)
+
+        action_layout.addLayout(btn_layout)
+
+        # 更新进度条
+        self.update_progress_bar = QProgressBar()
+        self.update_progress_bar.setVisible(False)
+        self.update_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #bdc3c7;
+                border-radius: 5px;
+                text-align: center;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #27ae60;
+                border-radius: 3px;
+            }
+        """)
+        action_layout.addWidget(self.update_progress_bar)
+
+        # 状态标签
+        self.update_status_label = QLabel("")
+        self.update_status_label.setStyleSheet("color: #7f8c8d; font-size: 11px; padding: 5px;")
+        action_layout.addWidget(self.update_status_label)
+
+        # 更新日志
+        self.release_notes_text = QTextEdit()
+        self.release_notes_text.setReadOnly(True)
+        self.release_notes_text.setMaximumHeight(120)
+        self.release_notes_text.setPlaceholderText("更新日志将在检查更新后显示...")
+        self.release_notes_text.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #bdc3c7;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 11px;
+            }
+        """)
+        action_layout.addWidget(self.release_notes_text)
+
+        action_group.setLayout(action_layout)
+        layout.addWidget(action_group)
+
+        layout.addStretch()
+
+        # 存储下载信息
+        self._update_download_url = None
+        self._update_version = None
+
+    def check_for_updates(self):
+        """检查更新"""
+        self.check_update_btn.setEnabled(False)
+        self.update_status_label.setText("正在检查更新...")
+        self.latest_version_label.setText("检查中...")
+        self.latest_version_label.setStyleSheet("color: #f39c12;")
+
+        self.update_check_thread = UpdateCheckThread()
+        self.update_check_thread.check_finished.connect(self.on_check_finished)
+        self.update_check_thread.error_signal.connect(self.on_check_error)
+        self.update_check_thread.start()
+
+    def on_check_finished(self, has_update, latest_version, download_url, release_notes):
+        """检查更新完成"""
+        self.check_update_btn.setEnabled(True)
+        self.latest_version_label.setText(f"v{latest_version}")
+
+        if has_update:
+            self.latest_version_label.setStyleSheet("color: #27ae60; font-weight: bold;")
+            self.update_status_label.setText(f"发现新版本 v{latest_version}，可以更新！")
+            self.do_update_btn.setEnabled(True)
+            self._update_download_url = download_url
+            self._update_version = latest_version
+        else:
+            self.latest_version_label.setStyleSheet("color: #7f8c8d;")
+            self.update_status_label.setText("当前已是最新版本")
+            self.do_update_btn.setEnabled(False)
+
+        self.release_notes_text.setText(release_notes if release_notes else "无更新说明")
+
+    def on_check_error(self, error_msg):
+        """检查更新出错"""
+        self.check_update_btn.setEnabled(True)
+        self.latest_version_label.setText("检查失败")
+        self.latest_version_label.setStyleSheet("color: #e74c3c;")
+        self.update_status_label.setText(error_msg)
+
+    def do_update(self):
+        """执行更新"""
+        if not self._update_download_url:
+            QMessageBox.warning(self, "警告", "没有可用的更新下载地址")
+            return
+
+        reply = QMessageBox.question(
+            self, "确认更新",
+            f"确定要更新到 v{self._update_version} 吗？\n\n"
+            "更新过程中会保留您的:\n"
+            "• 扫描历史数据\n"
+            "• 自定义 POC\n"
+            "• 配置文件\n\n"
+            "更新完成后需要重启程序。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        self.check_update_btn.setEnabled(False)
+        self.do_update_btn.setEnabled(False)
+        self.update_progress_bar.setVisible(True)
+        self.update_progress_bar.setValue(0)
+
+        self.update_download_thread = UpdateDownloadThread(
+            self._update_download_url,
+            self._update_version
+        )
+        self.update_download_thread.progress_signal.connect(self.on_update_progress)
+        self.update_download_thread.finished_signal.connect(self.on_update_finished)
+        self.update_download_thread.start()
+
+    def on_update_progress(self, percent, message):
+        """更新进度"""
+        self.update_progress_bar.setValue(percent)
+        self.update_status_label.setText(message)
+
+    def on_update_finished(self, success, message):
+        """更新完成"""
+        self.check_update_btn.setEnabled(True)
+        self.update_progress_bar.setVisible(False)
+
+        if success:
+            QMessageBox.information(self, "更新成功", message)
+            self.update_status_label.setText("更新完成，请重启程序")
+            # 询问是否立即重启
+            reply = QMessageBox.question(
+                self, "重启程序",
+                "更新已完成，是否立即重启程序？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self.restart_application()
+        else:
+            QMessageBox.critical(self, "更新失败", message)
+            self.update_status_label.setText("更新失败")
+            self.do_update_btn.setEnabled(True)
+
+    def restart_application(self):
+        """重启应用程序"""
+        import sys
+        import os
+        python = sys.executable
+        script = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "main.py"
+        )
+        os.execl(python, python, script)

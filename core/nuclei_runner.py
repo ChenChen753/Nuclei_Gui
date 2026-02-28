@@ -222,11 +222,22 @@ class NucleiScanThread(QThread):
                 "-stats",
                 "-stats-interval", "3"
             ])
-            
-            # POC 处理
-            for t in self.templates:
-                cmd.extend(["-t", t])
-                
+
+            # POC 处理 - 使用临时文件避免命令行长度限制
+            tmp_template_path = None
+            if len(self.templates) == 1:
+                # 单个模板直接用 -t 参数
+                cmd.extend(["-t", self.templates[0]])
+            else:
+                # 多个模板写入临时文件，使用 -t 指向文件
+                # 注意：nuclei 支持 -t 参数指向包含模板路径列表的文件
+                with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt', encoding='utf-8') as tmp_template:
+                    tmp_template_path = tmp_template.name
+                    for t in self.templates:
+                        tmp_template.write(t + '\n')
+                log_debug(f"模板列表写入临时文件: {tmp_template_path}, 共 {len(self.templates)} 个模板")
+                cmd.extend(["-t", tmp_template_path])
+
             if self.custom_args:
                 cmd.extend(self.custom_args)
             
@@ -295,8 +306,15 @@ class NucleiScanThread(QThread):
             log_debug(f"run_single_mode 异常: {e}\n{traceback.format_exc()}")
             logger.error(f"run_single_mode 异常: {e}")
         finally:
+            # 清理临时目标文件
             if tmp_target_path and os.path.exists(tmp_target_path):
                 try:
                     os.remove(tmp_target_path)
+                except OSError:
+                    pass
+            # 清理临时模板文件
+            if tmp_template_path and os.path.exists(tmp_template_path):
+                try:
+                    os.remove(tmp_template_path)
                 except OSError:
                     pass

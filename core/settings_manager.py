@@ -197,6 +197,17 @@ class SettingsManager:
         self.settings.setValue("window_maximized", "true" if maximized else "false")
         self.settings.sync()  # 强制同步到磁盘
 
+    # ============== 更新配置 ==============
+
+    def get_auto_check_update(self) -> bool:
+        """获取是否启动时自动检查更新"""
+        return str(self.settings.value("update_auto_check", "true")).lower() == "true"
+
+    def set_auto_check_update(self, enabled: bool):
+        """设置是否启动时自动检查更新"""
+        self.settings.setValue("update_auto_check", "true" if enabled else "false")
+        self.settings.sync()
+
 
 
 # 全局单例
