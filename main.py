@@ -1,15 +1,44 @@
 import sys
 import os
 from pathlib import Path
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QLineEdit, QPushButton, QTextEdit, QTableWidget, 
-                             QTableWidgetItem, QHeaderView, QFileDialog, QTabWidget, 
-                             QSplitter, QGroupBox, QSpinBox, QMessageBox, QCheckBox, 
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                             QLabel, QLineEdit, QPushButton, QTextEdit, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QFileDialog, QTabWidget,
+                             QSplitter, QGroupBox, QSpinBox, QMessageBox, QCheckBox,
                              QProgressBar, QGridLayout, QPlainTextEdit, QDialog, QComboBox,
-                             QToolBar, QAction, QFrame, QStackedWidget, QListWidget, 
+                             QToolBar, QAction, QFrame, QStackedWidget, QListWidget,
                              QListWidgetItem, QSizePolicy, QScrollArea)
 from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl
 from PyQt5.QtGui import QFont, QIcon, QColor, QPainter, QBrush, QPen, QDesktopServices
+
+# ================= DPI 缩放系统 =================
+
+# 全局缩放因子（将在程序启动时根据屏幕分辨率设置）
+UI_SCALE = 1.0
+
+def set_ui_scale(value):
+    """设置 UI 缩放因子"""
+    global UI_SCALE
+    UI_SCALE = value
+
+def get_ui_scale():
+    """获取当前 UI 缩放因子"""
+    return UI_SCALE
+
+def scaled(value):
+    """根据缩放因子计算缩放后的值"""
+    return int(value * UI_SCALE)
+
+def scaled_style(style_str):
+    """
+    自动缩放样式字符串中的像素值
+    将 Npx 替换为缩放后的值
+    """
+    import re
+    def replace_px(match):
+        num = int(match.group(1))
+        return f"{scaled(num)}px"
+    return re.sub(r'(\d+)px', replace_px, style_str)
 
 # ================= 主题管理系统 =================
 
@@ -375,42 +404,42 @@ class MainWindow(QMainWindow):
         # ===== 左侧导航栏 =====
         self.nav_panel = self._create_nav_panel()
         main_layout.addWidget(self.nav_panel)
-        
+
         # ===== 右侧主内容区 =====
         self.content_area = QWidget()
         self.content_area.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']};")
         content_layout = QVBoxLayout(self.content_area)
-        content_layout.setContentsMargins(20, 15, 20, 15)
-        content_layout.setSpacing(15)
-        
+        content_layout.setContentsMargins(scaled(20), scaled(15), scaled(20), scaled(15))
+        content_layout.setSpacing(scaled(15))
+
         # 页面标题栏
         self.page_header = QWidget()
         header_layout = QHBoxLayout(self.page_header)
-        header_layout.setContentsMargins(0, 0, 0, 10)
-        
+        header_layout.setContentsMargins(0, 0, 0, scaled(10))
+
         self.page_title = QLabel("仪表盘")
-        self.page_title.setStyleSheet(f"""
+        self.page_title.setStyleSheet(scaled_style(f"""
             font-size: 20px;
             font-weight: bold;
             color: {FORTRESS_COLORS['text_primary']};
-        """)
+        """))
         header_layout.addWidget(self.page_title)
-        
+
         self.page_subtitle = QLabel("")
-        self.page_subtitle.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 13px;")
+        self.page_subtitle.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 13px;"))
         header_layout.addWidget(self.page_subtitle)
-        
+
         header_layout.addStretch()
-        
+
         # 状态指示器
         self.status_indicator = QLabel("状态: 就绪")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['status_low']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #f0fdf4;
             border-radius: 12px;
-        """)
+        """))
         header_layout.addWidget(self.status_indicator)
         
         content_layout.addWidget(self.page_header)
@@ -474,43 +503,43 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("就绪")
     
     def _create_nav_panel(self):
-        """创建左侧导航栏"""
+        """创建左侧导航栏（支持 DPI 缩放）"""
         nav = QFrame()
-        nav.setFixedWidth(220)
+        nav.setFixedWidth(scaled(220))
         nav.setStyleSheet(f"""
             QFrame {{
                 background-color: {FORTRESS_COLORS['nav_bg']};
                 border-right: 1px solid {FORTRESS_COLORS['nav_border']};
             }}
         """)
-        
+
         nav_layout = QVBoxLayout(nav)
-        nav_layout.setContentsMargins(15, 20, 15, 20)
-        nav_layout.setSpacing(8)
-        
+        nav_layout.setContentsMargins(scaled(15), scaled(20), scaled(15), scaled(20))
+        nav_layout.setSpacing(scaled(8))
+
         # Logo / 标题区域
         logo_layout = QHBoxLayout()
         logo_icon = QLabel("🛡️")
-        logo_icon.setStyleSheet("font-size: 24px;")
+        logo_icon.setStyleSheet(scaled_style("font-size: 24px;"))
         logo_layout.addWidget(logo_icon)
-        
+
         logo_text = QLabel("Nuclei Scanner")
-        logo_text.setStyleSheet(f"""
+        logo_text.setStyleSheet(scaled_style(f"""
             font-size: 16px;
             font-weight: bold;
             color: {FORTRESS_COLORS.get('nav_text', FORTRESS_COLORS['text_primary'])};
-        """)
+        """))
         logo_layout.addWidget(logo_text)
         logo_layout.addStretch()
         nav_layout.addLayout(logo_layout)
-        
-        nav_layout.addSpacing(20)
-        
+
+        nav_layout.addSpacing(scaled(20))
+
         # 新建扫描按钮（突出显示）
         self.btn_new_scan = QPushButton("新建扫描")
-        self.btn_new_scan.setMinimumHeight(42)
+        self.btn_new_scan.setMinimumHeight(scaled(42))
         self.btn_new_scan.setCursor(Qt.PointingHandCursor)
-        self.btn_new_scan.setStyleSheet(f"""
+        self.btn_new_scan.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background-color: {FORTRESS_COLORS['btn_primary']};
                 color: white;
@@ -526,12 +555,12 @@ class MainWindow(QMainWindow):
             QPushButton:pressed {{
                 background-color: #1e40af;
             }}
-        """)
+        """))
         self.btn_new_scan.clicked.connect(self.show_new_scan_dialog)
         nav_layout.addWidget(self.btn_new_scan)
-        
-        nav_layout.addSpacing(20)
-        
+
+        nav_layout.addSpacing(scaled(20))
+
         # 导航项列表
         self.nav_items = []
         nav_data = [
@@ -543,33 +572,33 @@ class MainWindow(QMainWindow):
             ("AI 助手", 4),
             ("设置", 5),
         ]
-        
+
         for text, page_index in nav_data:
             btn = QPushButton(text)
-            btn.setMinimumHeight(40)
+            btn.setMinimumHeight(scaled(40))
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(self._get_nav_item_style(False))
             btn.clicked.connect(lambda checked, idx=page_index: self._switch_page(idx))
             nav_layout.addWidget(btn)
             self.nav_items.append((btn, page_index))
-        
+
         nav_layout.addStretch()
 
         # 底部版本信息和 GitHub 链接
         bottom_container = QWidget()
         bottom_layout = QHBoxLayout(bottom_container)
-        bottom_layout.setContentsMargins(10, 5, 10, 5)
-        bottom_layout.setSpacing(8)
+        bottom_layout.setContentsMargins(scaled(10), scaled(5), scaled(10), scaled(5))
+        bottom_layout.setSpacing(scaled(8))
 
         version_label = QLabel(f"v{__version__} - By {__author__}")
-        version_label.setStyleSheet(f"color: {FORTRESS_COLORS.get('nav_text_secondary', FORTRESS_COLORS['text_secondary'])}; font-size: 11px;")
+        version_label.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS.get('nav_text_secondary', FORTRESS_COLORS['text_secondary'])}; font-size: 11px;"))
         bottom_layout.addWidget(version_label)
 
         # GitHub 按钮
         btn_github = QPushButton()
         btn_github.setIcon(QIcon(str(Path(__file__).parent / "resources" / "github.svg")))
-        btn_github.setIconSize(QSize(18, 18))
-        btn_github.setFixedSize(24, 24)
+        btn_github.setIconSize(QSize(scaled(18), scaled(18)))
+        btn_github.setFixedSize(scaled(24), scaled(24))
         btn_github.setCursor(Qt.PointingHandCursor)
         btn_github.setToolTip("访问 GitHub 仓库")
         btn_github.setStyleSheet("""
@@ -590,9 +619,9 @@ class MainWindow(QMainWindow):
         return nav
     
     def _get_nav_item_style(self, is_active):
-        """获取导航项样式"""
+        """获取导航项样式（支持 DPI 缩放）"""
         if is_active:
-            return f"""
+            return scaled_style(f"""
                 QPushButton {{
                     background-color: #eff6ff;
                     color: {FORTRESS_COLORS['nav_active']};
@@ -603,9 +632,9 @@ class MainWindow(QMainWindow):
                     text-align: left;
                     padding: 10px 15px;
                 }}
-            """
+            """)
         else:
-            return f"""
+            return scaled_style(f"""
                 QPushButton {{
                     background-color: transparent;
                     color: {FORTRESS_COLORS.get('nav_text', FORTRESS_COLORS['text_primary'])};
@@ -618,7 +647,7 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['nav_hover']};
                 }}
-            """
+            """)
     
     def _switch_page(self, page_index):
         """切换页面"""
@@ -659,13 +688,13 @@ class MainWindow(QMainWindow):
         
         # ===== 左侧：历史记录 =====
         history_widget = QWidget()
-        history_widget.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;")
-        history_widget.setMaximumWidth(280)
+        history_widget.setStyleSheet(scaled_style(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;"))
+        history_widget.setMaximumWidth(scaled(280))
         history_layout = QVBoxLayout(history_widget)
-        history_layout.setContentsMargins(15, 15, 15, 15)
-        
+        history_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
+
         history_title = QLabel("搜索历史")
-        history_title.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['text_primary']}; font-size: 14px;")
+        history_title.setStyleSheet(scaled_style(f"font-weight: bold; color: {FORTRESS_COLORS['text_primary']}; font-size: 14px;"))
         history_layout.addWidget(history_title)
         
         self.fofa_history_list = QListWidget()
@@ -689,17 +718,17 @@ class MainWindow(QMainWindow):
         
         # ===== 右侧：搜索和结果 =====
         right_widget = QWidget()
-        right_widget.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;")
+        right_widget.setStyleSheet(scaled_style(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;"))
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(15, 15, 15, 15)
-        right_layout.setSpacing(15)
-        
+        right_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
+        right_layout.setSpacing(scaled(15))
+
         # 搜索输入行
         search_row = QHBoxLayout()
-        
+
         self.fofa_query_input = QLineEdit()
         self.fofa_query_input.setPlaceholderText('输入 FOFA 查询语句，例如: app="Apache" && country="CN"')
-        self.fofa_query_input.setStyleSheet(f"""
+        self.fofa_query_input.setStyleSheet(scaled_style(f"""
             QLineEdit {{
                 border: 1px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 6px;
@@ -709,7 +738,7 @@ class MainWindow(QMainWindow):
             QLineEdit:focus {{
                 border-color: {FORTRESS_COLORS['btn_primary']};
             }}
-        """)
+        """))
         self.fofa_query_input.returnPressed.connect(self._fofa_do_search)
         search_row.addWidget(self.fofa_query_input, 1)
         
@@ -717,26 +746,26 @@ class MainWindow(QMainWindow):
         self.fofa_size_combo = QComboBox()
         self.fofa_size_combo.addItems(["100", "500", "1000", "5000", "10000"])
         self.fofa_size_combo.setEditable(True)
-        self.fofa_size_combo.setFixedWidth(100)
+        self.fofa_size_combo.setFixedWidth(scaled(100))
         search_row.addWidget(self.fofa_size_combo)
-        
+
         self.fofa_btn_search = self._create_fortress_button("搜索", "primary")
         self.fofa_btn_search.clicked.connect(self._fofa_do_search)
         search_row.addWidget(self.fofa_btn_search)
-        
+
         right_layout.addLayout(search_row)
-        
+
         # 状态和进度
         status_row = QHBoxLayout()
         self.fofa_status_label = QLabel("请输入 FOFA 语句并点击搜索")
         self.fofa_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']};")
         status_row.addWidget(self.fofa_status_label)
-        
+
         status_row.addStretch()
-        
+
         self.fofa_progress = QProgressBar()
         self.fofa_progress.setRange(0, 0)
-        self.fofa_progress.setMaximumWidth(200)
+        self.fofa_progress.setMaximumWidth(scaled(200))
         self.fofa_progress.hide()
         status_row.addWidget(self.fofa_progress)
         right_layout.addLayout(status_row)
@@ -799,11 +828,11 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(15)
-        
+        layout.setSpacing(scaled(15))
+
         # 使用 Tab 切换不同 AI 功能
         ai_tabs = QTabWidget()
-        ai_tabs.setStyleSheet(f"""
+        ai_tabs.setStyleSheet(scaled_style(f"""
             QTabWidget::pane {{
                 border: none;
                 background-color: {FORTRESS_COLORS['content_bg']};
@@ -822,67 +851,67 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 color: {FORTRESS_COLORS['btn_primary']};
             }}
-        """)
+        """))
         
         # Tab 1: FOFA 语法生成
         fofa_tab = QWidget()
         fofa_layout = QVBoxLayout(fofa_tab)
-        fofa_layout.setContentsMargins(20, 20, 20, 20)
-        
+        fofa_layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
+
         fofa_layout.addWidget(QLabel("输入产品/系统名称，AI 将生成 FOFA 搜索语法："))
-        
+
         self.ai_fofa_input = QLineEdit()
         self.ai_fofa_input.setPlaceholderText("例如：Apache Tomcat、泛微OA、用友NC...")
-        self.ai_fofa_input.setStyleSheet(f"""
+        self.ai_fofa_input.setStyleSheet(scaled_style(f"""
             QLineEdit {{
                 border: 1px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 6px;
                 padding: 12px 15px;
                 font-size: 14px;
             }}
-        """)
+        """))
         fofa_layout.addWidget(self.ai_fofa_input)
-        
+
         self.ai_fofa_btn = self._create_fortress_button("生成 FOFA 语法", "primary")
         self.ai_fofa_btn.clicked.connect(lambda: self._ai_do_task("fofa", self.ai_fofa_input, self.ai_fofa_output))
         fofa_layout.addWidget(self.ai_fofa_btn)
-        
+
         self.ai_fofa_output = QTextEdit()
         self.ai_fofa_output.setReadOnly(True)
         self.ai_fofa_output.setPlaceholderText("AI 生成的 FOFA 语法将显示在这里...")
-        self.ai_fofa_output.setStyleSheet(f"""
+        self.ai_fofa_output.setStyleSheet(scaled_style(f"""
             QTextEdit {{
                 border: 1px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 6px;
                 padding: 10px;
                 background-color: {FORTRESS_COLORS['content_bg']};
             }}
-        """)
+        """))
         fofa_layout.addWidget(self.ai_fofa_output)
-        
+
         fofa_btn_row = QHBoxLayout()
         btn_copy_fofa = self._create_fortress_button("复制语法", "info")
         btn_copy_fofa.clicked.connect(lambda: self._copy_text(self.ai_fofa_output))
         fofa_btn_row.addWidget(btn_copy_fofa)
-        
+
         btn_to_fofa = self._create_fortress_button("跳转到 FOFA 搜索", "primary")
         btn_to_fofa.clicked.connect(self._ai_copy_fofa_and_open)
         fofa_btn_row.addWidget(btn_to_fofa)
         fofa_btn_row.addStretch()
         fofa_layout.addLayout(fofa_btn_row)
-        
+
         ai_tabs.addTab(fofa_tab, "FOFA 语法生成")
-        
+
         # Tab 2: 漏洞分析
         analyze_tab = QWidget()
         analyze_layout = QVBoxLayout(analyze_tab)
-        analyze_layout.setContentsMargins(20, 20, 20, 20)
-        
+        analyze_layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
+
         analyze_layout.addWidget(QLabel("输入漏洞信息，AI 将帮助分析："))
-        
+
         self.ai_analyze_input = QTextEdit()
         self.ai_analyze_input.setPlaceholderText("输入漏洞名称、CVE 编号或漏洞描述...")
-        self.ai_analyze_input.setMaximumHeight(150)
+        self.ai_analyze_input.setMaximumHeight(scaled(150))
         analyze_layout.addWidget(self.ai_analyze_input)
         
         self.ai_analyze_btn = self._create_fortress_button("分析漏洞", "primary")
@@ -909,11 +938,11 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(15)
-        
+        layout.setSpacing(scaled(15))
+
         # 使用 Tab 分组设置
         settings_tabs = QTabWidget()
-        settings_tabs.setStyleSheet(f"""
+        settings_tabs.setStyleSheet(scaled_style(f"""
             QTabWidget::pane {{
                 border: none;
                 background-color: {FORTRESS_COLORS['content_bg']};
@@ -932,18 +961,18 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 color: {FORTRESS_COLORS['btn_primary']};
             }}
-        """)
+        """))
         
         # Tab 1: 扫描参数
         scan_tab = QWidget()
         scan_layout = QVBoxLayout(scan_tab)
-        scan_layout.setContentsMargins(25, 25, 25, 25)
-        scan_layout.setSpacing(15)
-        
+        scan_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        scan_layout.setSpacing(scaled(15))
+
         # 使用表单布局
         form_container = QWidget()
         form_layout = QGridLayout(form_container)
-        form_layout.setSpacing(15)
+        form_layout.setSpacing(scaled(15))
         
         row = 0
         # 超时时间
@@ -1022,11 +1051,11 @@ class MainWindow(QMainWindow):
         # Tab 2: FOFA 配置
         fofa_tab = QWidget()
         fofa_layout = QVBoxLayout(fofa_tab)
-        fofa_layout.setContentsMargins(25, 25, 25, 25)
-        fofa_layout.setSpacing(15)
-        
+        fofa_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        fofa_layout.setSpacing(scaled(15))
+
         fofa_form = QGridLayout()
-        fofa_form.setSpacing(15)
+        fofa_form.setSpacing(scaled(15))
         
         fofa_form.addWidget(QLabel("FOFA API URL:"), 0, 0)
         self.settings_fofa_url = QLineEdit()
@@ -1054,44 +1083,44 @@ class MainWindow(QMainWindow):
         # Tab 3: AI 配置
         ai_tab = QWidget()
         ai_layout = QVBoxLayout(ai_tab)
-        ai_layout.setContentsMargins(25, 25, 25, 25)
-        ai_layout.setSpacing(15)
-        
+        ai_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        ai_layout.setSpacing(scaled(15))
+
         ai_form = QGridLayout()
-        ai_form.setSpacing(15)
-        
+        ai_form.setSpacing(scaled(15))
+
         # AI 预设选择行
         ai_form.addWidget(QLabel("AI 预设:"), 0, 0)
         preset_row = QHBoxLayout()
         self.settings_ai_preset = QComboBox()
-        self.settings_ai_preset.setMinimumWidth(200)
+        self.settings_ai_preset.setMinimumWidth(scaled(200))
         self._load_ai_presets_to_settings_combo()
         self.settings_ai_preset.currentIndexChanged.connect(self._on_ai_preset_changed)
         preset_row.addWidget(self.settings_ai_preset)
-        
+
         btn_add_preset = self._create_fortress_button("添加", "info")
-        btn_add_preset.setMinimumWidth(60)
+        btn_add_preset.setMinimumWidth(scaled(60))
         btn_add_preset.clicked.connect(self._add_ai_preset)
         preset_row.addWidget(btn_add_preset)
 
         btn_rename_preset = self._create_fortress_button("重命名", "info")
-        btn_rename_preset.setMinimumWidth(60)
+        btn_rename_preset.setMinimumWidth(scaled(60))
         btn_rename_preset.clicked.connect(self._rename_ai_preset)
         preset_row.addWidget(btn_rename_preset)
 
         btn_del_preset = self._create_fortress_button("删除", "warning")
-        btn_del_preset.setMinimumWidth(60)
+        btn_del_preset.setMinimumWidth(scaled(60))
         btn_del_preset.clicked.connect(self._delete_ai_preset)
         preset_row.addWidget(btn_del_preset)
-        
+
         preset_row.addStretch()
         ai_form.addLayout(preset_row, 0, 1)
-        
+
         ai_form.addWidget(QLabel("API URL:"), 1, 0)
         self.settings_ai_url = QLineEdit()
         self.settings_ai_url.setPlaceholderText("例如: https://api.openai.com/v1")
         ai_form.addWidget(self.settings_ai_url, 1, 1)
-        
+
         ai_form.addWidget(QLabel("API Key:"), 2, 0)
         api_key_row = QHBoxLayout()
         self.settings_ai_key = QLineEdit()
@@ -1100,7 +1129,7 @@ class MainWindow(QMainWindow):
         api_key_row.addWidget(self.settings_ai_key)
 
         self.btn_toggle_key = QPushButton("👁")
-        self.btn_toggle_key.setFixedSize(30, 30)
+        self.btn_toggle_key.setFixedSize(scaled(30), scaled(30))
         self.btn_toggle_key.setToolTip("显示/隐藏 API Key")
         self.btn_toggle_key.clicked.connect(self._toggle_api_key_visibility)
         api_key_row.addWidget(self.btn_toggle_key)
@@ -1132,15 +1161,15 @@ class MainWindow(QMainWindow):
 
         # 操作按钮行
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(scaled(10))
 
         btn_test_ai = self._create_fortress_button("测试连接", "info")
-        btn_test_ai.setMinimumWidth(100)
+        btn_test_ai.setMinimumWidth(scaled(100))
         btn_test_ai.clicked.connect(self._test_ai_connection)
         btn_row.addWidget(btn_test_ai)
 
         btn_save_ai = self._create_fortress_button("保存配置", "primary")
-        btn_save_ai.setMinimumWidth(100)
+        btn_save_ai.setMinimumWidth(scaled(100))
         btn_save_ai.clicked.connect(self._save_ai_preset_config)
         btn_row.addWidget(btn_save_ai)
 
@@ -1154,15 +1183,15 @@ class MainWindow(QMainWindow):
         # Tab 4: 主题设置
         theme_tab = QWidget()
         theme_layout = QVBoxLayout(theme_tab)
-        theme_layout.setContentsMargins(25, 25, 25, 25)
-        theme_layout.setSpacing(15)
-        
+        theme_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        theme_layout.setSpacing(scaled(15))
+
         theme_form = QGridLayout()
-        theme_form.setSpacing(15)
-        
+        theme_form.setSpacing(scaled(15))
+
         theme_form.addWidget(QLabel("选择主题:"), 0, 0)
         self.settings_theme_combo = QComboBox()
-        self.settings_theme_combo.setMinimumWidth(200)
+        self.settings_theme_combo.setMinimumWidth(scaled(200))
         for theme_name in get_available_themes():
             self.settings_theme_combo.addItem(theme_name)
         # 设置当前主题
@@ -1171,26 +1200,51 @@ class MainWindow(QMainWindow):
         if index >= 0:
             self.settings_theme_combo.setCurrentIndex(index)
         theme_form.addWidget(self.settings_theme_combo, 0, 1)
-        
+
         # 主题预览区域
         theme_form.addWidget(QLabel("主题预览:"), 1, 0, Qt.AlignTop)
         self.theme_preview_widget = QWidget()
-        self.theme_preview_widget.setFixedSize(300, 120)
+        self.theme_preview_widget.setFixedSize(scaled(300), scaled(120))
         self._update_theme_preview()
         theme_form.addWidget(self.theme_preview_widget, 1, 1)
-        
+
         # 连接主题切换信号
         self.settings_theme_combo.currentTextChanged.connect(self._on_theme_preview_changed)
-        
+
         # 应用主题按钮
         btn_apply_theme = self._create_fortress_button("应用主题", "primary")
         btn_apply_theme.clicked.connect(self._apply_selected_theme)
         theme_form.addWidget(btn_apply_theme, 2, 1)
-        
+
         theme_tip = QLabel("提示: 应用主题后需要重启程序才能完全生效")
         theme_tip.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-style: italic;")
         theme_form.addWidget(theme_tip, 3, 0, 1, 2)
-        
+
+        # UI 缩放设置
+        theme_form.addWidget(QLabel("界面缩放:"), 4, 0)
+        ui_scale_row = QHBoxLayout()
+        self.settings_ui_scale_combo = QComboBox()
+        self.settings_ui_scale_combo.addItems(["自动", "0.8", "0.85", "0.9", "0.95", "1.0", "1.05", "1.1", "1.15", "1.2"])
+        self.settings_ui_scale_combo.setMinimumWidth(scaled(100))
+        # 读取当前设置
+        current_scale = self.settings.get_ui_scale()
+        if current_scale == 0:
+            self.settings_ui_scale_combo.setCurrentText("自动")
+        else:
+            self.settings_ui_scale_combo.setCurrentText(str(current_scale))
+        ui_scale_row.addWidget(self.settings_ui_scale_combo)
+
+        btn_apply_scale = self._create_fortress_button("应用缩放", "info")
+        btn_apply_scale.clicked.connect(self._apply_ui_scale)
+        ui_scale_row.addWidget(btn_apply_scale)
+        ui_scale_row.addStretch()
+        theme_form.addLayout(ui_scale_row, 4, 1)
+
+        scale_tip = QLabel("提示: 调整界面元素大小，高分辨率屏幕可尝试 0.85-0.95，低分辨率可尝试 1.1-1.2，修改后需重启")
+        scale_tip.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-style: italic;")
+        scale_tip.setWordWrap(True)
+        theme_form.addWidget(scale_tip, 5, 0, 1, 2)
+
         theme_layout.addLayout(theme_form)
         theme_layout.addStretch()
         settings_tabs.addTab(theme_tab, "主题设置")
@@ -1198,12 +1252,12 @@ class MainWindow(QMainWindow):
         # Tab 5: Nuclei 管理
         nuclei_tab = QWidget()
         nuclei_layout = QVBoxLayout(nuclei_tab)
-        nuclei_layout.setContentsMargins(25, 25, 25, 25)
-        nuclei_layout.setSpacing(15)
-        
+        nuclei_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        nuclei_layout.setSpacing(scaled(15))
+
         # 系统信息组
         info_group = QGroupBox("系统信息")
-        info_group.setStyleSheet(f"""
+        info_group.setStyleSheet(scaled_style(f"""
             QGroupBox {{
                 font-size: 14px;
                 font-weight: bold;
@@ -1218,9 +1272,9 @@ class MainWindow(QMainWindow):
                 left: 15px;
                 padding: 0 8px;
             }}
-        """)
+        """))
         info_layout = QGridLayout(info_group)
-        info_layout.setSpacing(10)
+        info_layout.setSpacing(scaled(10))
         
         import platform
         system = platform.system()
@@ -1236,7 +1290,7 @@ class MainWindow(QMainWindow):
         
         # Nuclei 下载管理组
         download_group = QGroupBox("Nuclei 下载管理")
-        download_group.setStyleSheet(f"""
+        download_group.setStyleSheet(scaled_style(f"""
             QGroupBox {{
                 font-size: 14px;
                 font-weight: bold;
@@ -1251,7 +1305,7 @@ class MainWindow(QMainWindow):
                 left: 15px;
                 padding: 0 8px;
             }}
-        """)
+        """))
         download_layout = QVBoxLayout(download_group)
         
         # 说明文本
@@ -1294,12 +1348,12 @@ class MainWindow(QMainWindow):
         # Tab 6: 更新设置
         update_tab = QWidget()
         update_layout = QVBoxLayout(update_tab)
-        update_layout.setContentsMargins(25, 25, 25, 25)
-        update_layout.setSpacing(15)
+        update_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        update_layout.setSpacing(scaled(15))
 
         # 版本信息组
         version_group = QGroupBox("版本信息")
-        version_group.setStyleSheet(f"""
+        version_group.setStyleSheet(scaled_style(f"""
             QGroupBox {{
                 font-size: 14px;
                 font-weight: bold;
@@ -1314,9 +1368,9 @@ class MainWindow(QMainWindow):
                 left: 15px;
                 padding: 0 8px;
             }}
-        """)
+        """))
         version_layout = QGridLayout(version_group)
-        version_layout.setSpacing(10)
+        version_layout.setSpacing(scaled(10))
 
         from core.updater import get_current_version
         version_layout.addWidget(QLabel("当前版本:"), 0, 0)
@@ -1347,7 +1401,7 @@ class MainWindow(QMainWindow):
             "• 自定义 POC (poc_library/custom, poc_library/user_generated)<br>"
             "• 配置文件和日志"
         )
-        preserve_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 10px; background: {FORTRESS_COLORS['nav_bg']}; border-radius: 4px;")
+        preserve_label.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 10px; background: {FORTRESS_COLORS['nav_bg']}; border-radius: 4px;"))
         update_settings_layout.addWidget(preserve_label)
 
         update_layout.addWidget(update_settings_group)
@@ -1359,12 +1413,12 @@ class MainWindow(QMainWindow):
 
         btn_row = QHBoxLayout()
         self.check_update_btn = self._create_fortress_button("检查更新", "info")
-        self.check_update_btn.setMinimumWidth(120)
+        self.check_update_btn.setMinimumWidth(scaled(120))
         self.check_update_btn.clicked.connect(self._check_for_updates)
         btn_row.addWidget(self.check_update_btn)
 
         self.do_update_btn = self._create_fortress_button("下载更新", "success")
-        self.do_update_btn.setMinimumWidth(120)
+        self.do_update_btn.setMinimumWidth(scaled(120))
         self.do_update_btn.setEnabled(False)
         self.do_update_btn.clicked.connect(self._do_update)
         btn_row.addWidget(self.do_update_btn)
@@ -1375,7 +1429,7 @@ class MainWindow(QMainWindow):
         # 更新进度条
         self.update_progress_bar = QProgressBar()
         self.update_progress_bar.setVisible(False)
-        self.update_progress_bar.setStyleSheet(f"""
+        self.update_progress_bar.setStyleSheet(scaled_style(f"""
             QProgressBar {{
                 border: 2px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 5px;
@@ -1386,20 +1440,20 @@ class MainWindow(QMainWindow):
                 background-color: {FORTRESS_COLORS['btn_success']};
                 border-radius: 3px;
             }}
-        """)
+        """))
         update_action_layout.addWidget(self.update_progress_bar)
 
         # 状态标签
         self.update_status_label = QLabel("")
-        self.update_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 5px;")
+        self.update_status_label.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 11px; padding: 5px;"))
         update_action_layout.addWidget(self.update_status_label)
 
         # 更新日志
         self.release_notes_text = QTextEdit()
         self.release_notes_text.setReadOnly(True)
-        self.release_notes_text.setMaximumHeight(120)
+        self.release_notes_text.setMaximumHeight(scaled(120))
         self.release_notes_text.setPlaceholderText("更新日志将在检查更新后显示...")
-        self.release_notes_text.setStyleSheet(f"""
+        self.release_notes_text.setStyleSheet(scaled_style(f"""
             QTextEdit {{
                 border: 1px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 4px;
@@ -1408,7 +1462,7 @@ class MainWindow(QMainWindow):
                 background: {FORTRESS_COLORS['content_bg']};
                 color: {FORTRESS_COLORS['text_primary']};
             }}
-        """)
+        """))
         update_action_layout.addWidget(self.release_notes_text)
 
         update_layout.addWidget(update_action_group)
@@ -1422,16 +1476,16 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(settings_tabs)
 
-        
+
         # 底部保存按钮
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        
+
         btn_save = self._create_fortress_button("保存设置", "primary")
-        btn_save.setMinimumWidth(150)
+        btn_save.setMinimumWidth(scaled(150))
         btn_save.clicked.connect(self._save_all_settings)
         btn_row.addWidget(btn_save)
-        
+
         layout.addLayout(btn_row)
         
         # 加载当前设置
@@ -1453,99 +1507,99 @@ class MainWindow(QMainWindow):
         top_row = QHBoxLayout()
         
         desc_label = QLabel("管理扫描任务队列，可以启动、暂停、取消任务")
-        desc_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 13px;")
+        desc_label.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 13px;"))
         top_row.addWidget(desc_label)
-        
+
         top_row.addStretch()
-        
+
         # 状态筛选
         top_row.addWidget(QLabel("筛选状态:"))
         self.task_status_filter = QComboBox()
         self.task_status_filter.addItems(["全部", "等待中", "运行中", "已暂停", "已完成", "失败", "已取消"])
-        self.task_status_filter.setMinimumWidth(100)
+        self.task_status_filter.setMinimumWidth(scaled(100))
         self.task_status_filter.currentTextChanged.connect(self._filter_task_list)
         top_row.addWidget(self.task_status_filter)
-        
+
         # 刷新按钮
         btn_refresh = self._create_fortress_button("刷新", "info")
-        btn_refresh.setMinimumWidth(80)
+        btn_refresh.setMinimumWidth(scaled(80))
         btn_refresh.clicked.connect(self._refresh_task_list)
         top_row.addWidget(btn_refresh)
-        
+
         layout.addLayout(top_row)
-        
+
         # 任务列表表格
         self.task_table = QTableWidget()
         self.task_table.setColumnCount(9)
         self.task_table.setHorizontalHeaderLabels(["任务ID", "名称", "状态", "进度", "目标数", "POC数", "创建时间", "开始时间", "耗时"])
         self.task_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(0, 80)
+        self.task_table.setColumnWidth(0, scaled(80))
         self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.task_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(2, 80)
+        self.task_table.setColumnWidth(2, scaled(80))
         self.task_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(3, 80)
+        self.task_table.setColumnWidth(3, scaled(80))
         self.task_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(4, 70)
+        self.task_table.setColumnWidth(4, scaled(70))
         self.task_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(5, 70)
+        self.task_table.setColumnWidth(5, scaled(70))
         self.task_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(6, 140)
+        self.task_table.setColumnWidth(6, scaled(140))
         self.task_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(7, 140)
+        self.task_table.setColumnWidth(7, scaled(140))
         self.task_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.Fixed)
-        self.task_table.setColumnWidth(8, 100)
+        self.task_table.setColumnWidth(8, scaled(100))
         self.task_table.verticalHeader().setVisible(False)
         self.task_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.task_table.setSelectionMode(QTableWidget.SingleSelection)
         self.task_table.setAlternatingRowColors(True)
-        
+
         # 应用表格样式
         from core.fortress_style import get_table_stylesheet
         self.task_table.setStyleSheet(get_table_stylesheet(FORTRESS_COLORS))
-        
+
         layout.addWidget(self.task_table)
-        
+
         # 底部操作按钮
         btn_row = QHBoxLayout()
-        
+
         btn_start = self._create_fortress_button("启动选中任务", "success")
-        btn_start.setMinimumWidth(120)
+        btn_start.setMinimumWidth(scaled(120))
         btn_start.clicked.connect(self._start_selected_task)
         btn_row.addWidget(btn_start)
-        
+
         btn_pause = self._create_fortress_button("暂停", "warning")
-        btn_pause.setMinimumWidth(80)
+        btn_pause.setMinimumWidth(scaled(80))
         btn_pause.clicked.connect(self._pause_selected_task)
         btn_row.addWidget(btn_pause)
-        
+
         btn_resume = self._create_fortress_button("恢复", "info")
-        btn_resume.setMinimumWidth(80)
+        btn_resume.setMinimumWidth(scaled(80))
         btn_resume.clicked.connect(self._resume_selected_task)
         btn_row.addWidget(btn_resume)
-        
+
         btn_cancel = self._create_fortress_button("取消", "warning")
-        btn_cancel.setMinimumWidth(80)
+        btn_cancel.setMinimumWidth(scaled(80))
         btn_cancel.clicked.connect(self._cancel_selected_task)
         btn_row.addWidget(btn_cancel)
-        
+
         btn_row.addStretch()
-        
+
         btn_delete = self._create_fortress_button("删除选中", "warning")
-        btn_delete.setMinimumWidth(100)
+        btn_delete.setMinimumWidth(scaled(100))
         btn_delete.clicked.connect(self._delete_selected_task)
         btn_row.addWidget(btn_delete)
         
         btn_clear = self._create_fortress_button("清理已完成", "secondary")
-        btn_clear.setMinimumWidth(100)
+        btn_clear.setMinimumWidth(scaled(100))
         btn_clear.clicked.connect(self._clear_completed_tasks)
         btn_row.addWidget(btn_clear)
-        
+
         layout.addLayout(btn_row)
-        
+
         # 状态栏
         self.task_status_label = QLabel("共 0 个任务")
-        self.task_status_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;")
+        self.task_status_label.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;"))
         layout.addWidget(self.task_status_label)
         
         # 设置定时器自动刷新
@@ -1799,16 +1853,16 @@ class MainWindow(QMainWindow):
         # 3. 启用控制按钮
         self.btn_stop.setEnabled(True)
         self.btn_pause.setEnabled(True)
-        
+
         # 更新状态指示
         self.status_indicator.setText("状态: 扫描中")
         # 简单设置样式
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: #f97316;
             background-color: #fff7ed;
             border-radius: 12px;
             padding: 5px 12px;
-        """)
+        """))
 
     # --- Worker 信号处理槽函数 ---
     
@@ -1914,7 +1968,7 @@ class MainWindow(QMainWindow):
         btn_detail = QPushButton("详情")
         btn_detail.setCursor(Qt.PointingHandCursor)
         # 强制指定样式
-        btn_detail.setStyleSheet(f"""
+        btn_detail.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background-color: {FORTRESS_COLORS['btn_info']};
                 color: white;
@@ -1926,14 +1980,14 @@ class MainWindow(QMainWindow):
             QPushButton:hover {{
                 background-color: {FORTRESS_COLORS['btn_info_hover']};
             }}
-        """)
+        """))
         # 绑定点击事件，使用闭包保存 result
         btn_detail.clicked.connect(lambda checked, r=result: self._show_vuln_detail(r, json.dumps(r, indent=2, ensure_ascii=False)))
-        
+
         # 创建容器居中按钮
         w_detail = QWidget()
         l_detail = QHBoxLayout(w_detail)
-        l_detail.setContentsMargins(5, 2, 5, 2)
+        l_detail.setContentsMargins(scaled(5), scaled(2), scaled(5), scaled(2))
         l_detail.addWidget(btn_detail)
         self.result_table.setCellWidget(row, 5, w_detail)
         
@@ -1967,13 +2021,13 @@ class MainWindow(QMainWindow):
         result_count = len(self.scan_results_data)
         self.lbl_progress.setText(f"扫描完成，发现 {result_count} 个漏洞")
         self.status_indicator.setText(f"状态: {status}")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['status_low']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #f0fdf4;
             border-radius: 12px;
-        """)
+        """))
 
         # 计算耗时
         import time
@@ -2329,13 +2383,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "成功", "已清理完成的任务")
     
     def _create_fortress_button(self, text, btn_type='primary'):
-        """创建 FORTRESS 风格按钮"""
+        """创建 FORTRESS 风格按钮（支持 DPI 缩放）"""
         btn = QPushButton(text)
-        btn.setMinimumHeight(38)
+        btn.setMinimumHeight(scaled(38))
         btn.setCursor(Qt.PointingHandCursor)
-        
+
         if btn_type == 'primary':
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_primary']};
                     color: white;
@@ -2348,9 +2402,9 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_primary_hover']};
                 }}
-            """)
+            """))
         elif btn_type == 'warning':
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_warning']};
                     color: white;
@@ -2363,9 +2417,9 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_warning_hover']};
                 }}
-            """)
+            """))
         elif btn_type == 'info':
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_info']};
                     color: white;
@@ -2378,9 +2432,9 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_info_hover']};
                 }}
-            """)
+            """))
         elif btn_type == 'success':
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_success']};
                     color: white;
@@ -2393,9 +2447,9 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_success_hover']};
                 }}
-            """)
+            """))
         elif btn_type == 'purple':
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_purple']};
                     color: white;
@@ -2408,13 +2462,13 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_purple_hover']};
                 }}
-            """)
+            """))
         elif btn_type == 'secondary':
             # 次要按钮：边框样式，与界面风格一致
             text_color = FORTRESS_COLORS.get('text_primary', '#1f2937')
             border_color = FORTRESS_COLORS.get('nav_border', '#e5e7eb')
             hover_bg = FORTRESS_COLORS.get('nav_hover', '#f3f4f6')
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: transparent;
                     color: {text_color};
@@ -2426,48 +2480,48 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {hover_bg};
                 }}
-            """)
+            """))
         
         return btn
     
     def _create_scan_stat_card(self, title, value, color):
-        """创建扫描统计卡片"""
+        """创建扫描统计卡片（支持 DPI 缩放）"""
         card = QWidget()
-        card.setFixedSize(90, 60)
-        card.setStyleSheet(f"""
+        card.setFixedSize(scaled(90), scaled(60))
+        card.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {FORTRESS_COLORS.get('table_header', '#f1f5f9')};
                 border-radius: 8px;
                 border-left: 3px solid {color};
             }}
-        """)
-        
+        """))
+
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(10, 5, 10, 5)
-        card_layout.setSpacing(2)
-        
+        card_layout.setContentsMargins(scaled(10), scaled(5), scaled(10), scaled(5))
+        card_layout.setSpacing(scaled(2))
+
         # 数值
         value_label = QLabel(value)
-        value_label.setStyleSheet(f"""
+        value_label.setStyleSheet(scaled_style(f"""
             font-size: 18px;
             font-weight: bold;
             color: {color};
-        """)
+        """))
         value_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(value_label)
-        
+
         # 标题
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"""
+        title_label.setStyleSheet(scaled_style(f"""
             font-size: 11px;
             color: {FORTRESS_COLORS.get('text_secondary', '#6b7280')};
-        """)
+        """))
         title_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(title_label)
-        
+
         # 存储引用以便更新
         card.value_label = value_label
-        
+
         return card
     
     def _update_scan_stats(self, targets=0, pocs=0, vulns=None):
@@ -2848,30 +2902,30 @@ class MainWindow(QMainWindow):
         # 自定义弹窗以适配主题
         dialog = QDialog(self)
         dialog.setWindowTitle("添加预设")
-        dialog.resize(400, 180)
+        dialog.resize(scaled(400), scaled(180))
         apply_fortress_style(dialog, FORTRESS_COLORS)
-        
+
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
+        layout.setSpacing(scaled(15))
+        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
+
         # 提示标签
         label = QLabel("请输入预设名称：")
-        label.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {FORTRESS_COLORS.get('text_primary', '#333')};")
+        label.setStyleSheet(scaled_style(f"font-size: 14px; font-weight: bold; color: {FORTRESS_COLORS.get('text_primary', '#333')};"))
         layout.addWidget(label)
-        
+
         # 输入框
         name_input = QLineEdit()
         name_input.setPlaceholderText("例如：GPT-4 / DeepSeek")
-        
+
         # 根据深浅色模式决定输入框背景
         is_dark = FORTRESS_COLORS.get('is_dark', False)
         if not is_dark and 'content_bg' in FORTRESS_COLORS:
              is_dark = FORTRESS_COLORS.get('content_bg', '').lower() in ['#1e293b', '#1a2332', '#111827']
-             
+
         input_bg = FORTRESS_COLORS.get('table_header', '#334155') if is_dark else 'white'
-        
-        name_input.setStyleSheet(f"""
+
+        name_input.setStyleSheet(scaled_style(f"""
             QLineEdit {{
                 border: 1px solid {FORTRESS_COLORS.get('nav_border', '#e5e7eb')};
                 border-radius: 6px;
@@ -2883,7 +2937,7 @@ class MainWindow(QMainWindow):
             QLineEdit:focus {{
                 border-color: {FORTRESS_COLORS.get('btn_primary', '#2563eb')};
             }}
-        """)
+        """))
         layout.addWidget(name_input)
         
         # 按钮
@@ -3108,14 +3162,14 @@ class MainWindow(QMainWindow):
         colors = get_theme_colors(theme_name)
         
         # 设置预览样式
-        self.theme_preview_widget.setStyleSheet(f"""
+        self.theme_preview_widget.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {colors['content_bg']};
                 border: 1px solid {colors['nav_border']};
                 border-radius: 8px;
             }}
-        """)
-        
+        """))
+
         # 清除旧的布局
         if self.theme_preview_widget.layout():
             old_layout = self.theme_preview_widget.layout()
@@ -3125,20 +3179,20 @@ class MainWindow(QMainWindow):
                     item.widget().deleteLater()
         else:
             layout = QVBoxLayout(self.theme_preview_widget)
-            layout.setContentsMargins(10, 10, 10, 10)
-        
+            layout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
+
         layout = self.theme_preview_widget.layout()
-        
+
         # 添加预览标题
         title = QLabel(f"主题: {theme_name}")
         title.setStyleSheet(f"color: {colors['text_primary']}; font-weight: bold; border: none;")
         layout.addWidget(title)
-        
+
         # 添加预览按钮行
         btn_row = QHBoxLayout()
-        
+
         btn1 = QPushButton("主按钮")
-        btn1.setStyleSheet(f"""
+        btn1.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background-color: {colors['btn_primary']};
                 color: white;
@@ -3146,11 +3200,11 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 padding: 5px 10px;
             }}
-        """)
+        """))
         btn_row.addWidget(btn1)
-        
+
         btn2 = QPushButton("信息")
-        btn2.setStyleSheet(f"""
+        btn2.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background-color: {colors['btn_info']};
                 color: white;
@@ -3158,11 +3212,11 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 padding: 5px 10px;
             }}
-        """)
+        """))
         btn_row.addWidget(btn2)
-        
+
         btn3 = QPushButton("成功")
-        btn3.setStyleSheet(f"""
+        btn3.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background-color: {colors['btn_success']};
                 color: white;
@@ -3170,12 +3224,12 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 padding: 5px 10px;
             }}
-        """)
+        """))
         btn_row.addWidget(btn3)
         btn_row.addStretch()
-        
+
         layout.addLayout(btn_row)
-        
+
         # 添加文字预览
         text_label = QLabel("次级文字示例")
         text_label.setStyleSheet(f"color: {colors['text_secondary']}; border: none;")
@@ -3189,23 +3243,46 @@ class MainWindow(QMainWindow):
         """应用选中的主题"""
         if not hasattr(self, 'settings_theme_combo'):
             return
-        
+
         theme_name = self.settings_theme_combo.currentText()
         if theme_name not in THEME_PRESETS:
             QMessageBox.warning(self, "错误", f"无效的主题: {theme_name}")
             return
-        
+
         # 保存主题设置
         self.settings.save_current_theme(theme_name)
-        
+
         # 更新全局颜色（部分组件会立即生效）
         global FORTRESS_COLORS
         FORTRESS_COLORS.clear()
         FORTRESS_COLORS.update(THEME_PRESETS[theme_name])
-        
+
         QMessageBox.information(
-            self, "成功", 
+            self, "成功",
             f"已应用主题【{theme_name}】\n\n重启程序后完全生效。"
+        )
+
+    def _apply_ui_scale(self):
+        """应用 UI 缩放设置"""
+        if not hasattr(self, 'settings_ui_scale_combo'):
+            return
+
+        scale_text = self.settings_ui_scale_combo.currentText()
+        if scale_text == "自动":
+            scale_value = 0.0
+        else:
+            try:
+                scale_value = float(scale_text)
+            except ValueError:
+                QMessageBox.warning(self, "错误", "无效的缩放值")
+                return
+
+        # 保存设置
+        self.settings.set_ui_scale(scale_value)
+
+        QMessageBox.information(
+            self, "成功",
+            f"已设置界面缩放为【{scale_text}】\n\n重启程序后生效。"
         )
 
     def _ai_do_task(self, task_type, input_widget, output_widget):
@@ -3753,14 +3830,14 @@ class MainWindow(QMainWindow):
         # 详情和导出列：设置固定宽度以适配按钮
         for i in [5, 6]:
             self.history_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Fixed)
-            self.history_table.setColumnWidth(i, 85)
+            self.history_table.setColumnWidth(i, scaled(85))
         self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.history_table.setAlternatingRowColors(True)
         # 增加行高，让按钮显示不拥挤
-        self.history_table.verticalHeader().setDefaultSectionSize(45)
+        self.history_table.verticalHeader().setDefaultSectionSize(scaled(45))
         self.history_table.verticalHeader().setVisible(False) # 隐藏垂直表头，统一风格
         # 移除高度限制，让表格自动填充可用空间
-        self.history_table.setMinimumHeight(200)
+        self.history_table.setMinimumHeight(scaled(200))
         center_layout.addWidget(self.history_table, 1)  # stretch factor = 1，让表格优先获取空间
         
         btn_row = QHBoxLayout()
@@ -3783,37 +3860,37 @@ class MainWindow(QMainWindow):
         
         center_panel.setLayout(center_layout)
         content_splitter.addWidget(center_panel)
-        
+
         # 右栏：快捷操作
         right_panel = QGroupBox("快捷操作")
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(15)  # 增加间距
-        
+        right_layout.setSpacing(scaled(15))  # 增加间距
+
         btn_new_scan = self._create_fortress_button("新建扫描", "primary")
-        btn_new_scan.setMinimumHeight(45)  # 增加高度
+        btn_new_scan.setMinimumHeight(scaled(45))  # 增加高度
         btn_new_scan.clicked.connect(self.show_new_scan_dialog) # 直接打开新建扫描弹窗
         right_layout.addWidget(btn_new_scan)
-        
+
         btn_sync_poc = self._create_fortress_button("同步 POC 库", "purple")
-        btn_sync_poc.setMinimumHeight(45)
+        btn_sync_poc.setMinimumHeight(scaled(45))
         btn_sync_poc.clicked.connect(self.open_poc_sync_dialog)
         right_layout.addWidget(btn_sync_poc)
-        
+
         btn_ai = self._create_fortress_button("AI 助手", "warning")
-        btn_ai.setMinimumHeight(45)
+        btn_ai.setMinimumHeight(scaled(45))
         btn_ai.clicked.connect(lambda: self._switch_page(4)) # 切换到 AI 助手页 (index 4)
         right_layout.addWidget(btn_ai)
-        
+
         btn_fofa = self._create_fortress_button("FOFA 搜索", "success")
-        btn_fofa.setMinimumHeight(45)
+        btn_fofa.setMinimumHeight(scaled(45))
         btn_fofa.clicked.connect(lambda: self._switch_page(3))
         right_layout.addWidget(btn_fofa)
-        
+
         right_layout.addStretch()
-        
+
         # 今日统计
         today_label = QLabel("📅 今日统计")
-        today_label.setStyleSheet("font-weight: bold; margin-top: 15px;")
+        today_label.setStyleSheet(scaled_style("font-weight: bold; margin-top: 15px;"))
         right_layout.addWidget(today_label)
         
         trend = stats.get('trend_7days', [])
@@ -3831,45 +3908,45 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
     
     def _create_mini_card(self, title, value, color):
-        """创建紧凑型统计卡片"""
+        """创建紧凑型统计卡片（支持 DPI 缩放）"""
         card = QFrame()
-        card.setFixedHeight(70)
-        card.setStyleSheet(f"""
+        card.setFixedHeight(scaled(70))
+        card.setStyleSheet(scaled_style(f"""
             QFrame {{
                 background-color: {color};
                 border-radius: 8px;
             }}
-        """)
-        
+        """))
+
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(10, 5, 10, 5)
-        card_layout.setSpacing(2)
-        
+        card_layout.setContentsMargins(scaled(10), scaled(5), scaled(10), scaled(5))
+        card_layout.setSpacing(scaled(2))
+
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: rgba(255,255,255,0.85); font-size: 11px;")
+        title_label.setStyleSheet(scaled_style("color: rgba(255,255,255,0.85); font-size: 11px;"))
         card_layout.addWidget(title_label)
-        
+
         value_label = QLabel(value)
-        value_label.setStyleSheet("color: white; font-size: 22px; font-weight: bold;")
+        value_label.setStyleSheet(scaled_style("color: white; font-size: 22px; font-weight: bold;"))
         card_layout.addWidget(value_label)
-        
+
         return card
-    
+
     def _create_severity_bar(self, label, count, color):
         """创建严重程度进度条，返回包含控件的容器和进度条本身"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 2, 0, 2)
-        
+        layout.setContentsMargins(0, scaled(2), 0, scaled(2))
+
         label_widget = QLabel(f"{label}:")
-        label_widget.setFixedWidth(50)
+        label_widget.setFixedWidth(scaled(50))
         layout.addWidget(label_widget)
-        
+
         bar = QProgressBar()
         bar.setRange(0, max(count, 10))
         bar.setValue(count)
         bar.setFormat(f"{count}")
-        bar.setStyleSheet(f"""
+        bar.setStyleSheet(scaled_style(f"""
             QProgressBar {{
                 border: none;
                 border-radius: 5px;
@@ -3881,9 +3958,9 @@ class MainWindow(QMainWindow):
                 background-color: {color};
                 border-radius: 5px;
             }}
-        """.replace("%PLACEHOLDER%", FORTRESS_COLORS.get('nav_border', '#ecf0f1')))
+        """.replace("%PLACEHOLDER%", FORTRESS_COLORS.get('nav_border', '#ecf0f1'))))
         layout.addWidget(bar)
-        
+
         return widget, bar  # 同时返回容器和进度条
     
     def refresh_dashboard(self):
@@ -3957,7 +4034,7 @@ class MainWindow(QMainWindow):
             btn_detail = QPushButton("详情")
             btn_detail.setCursor(Qt.PointingHandCursor)
             # 强制指定 QPushButton#ID 选择器，优先级最高
-            btn_detail.setStyleSheet(f"""
+            btn_detail.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_info']};
                     color: white;
@@ -3973,7 +4050,7 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_info_hover']};
                 }}
-            """)
+            """))
             btn_detail.setProperty("scan_id", record.get('id'))
             btn_detail.clicked.connect(lambda checked, sid=record.get('id'): self.show_scan_detail(sid))
             # 创建容器居中按钮
@@ -3981,14 +4058,14 @@ class MainWindow(QMainWindow):
             w_detail.setObjectName("cell_container")
             w_detail.setStyleSheet("#cell_container { background: transparent; }")
             l_detail = QHBoxLayout(w_detail)
-            l_detail.setContentsMargins(2, 2, 2, 2)
+            l_detail.setContentsMargins(scaled(2), scaled(2), scaled(2), scaled(2))
             l_detail.addWidget(btn_detail)
             self.history_table.setCellWidget(row, 5, w_detail)
-            
+
             # 导出按钮
             btn_export = QPushButton("导出")
             btn_export.setCursor(Qt.PointingHandCursor)
-            btn_export.setStyleSheet(f"""
+            btn_export.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_warning']};
                     color: white;
@@ -4004,7 +4081,7 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_warning_hover']};
                 }}
-            """)
+            """))
             btn_export.setProperty("scan_id", record.get('id'))
             btn_export.clicked.connect(lambda checked, sid=record.get('id'): self.export_scan_record(sid))
             # 创建容器居中按钮
@@ -4012,7 +4089,7 @@ class MainWindow(QMainWindow):
             w_export.setObjectName("cell_container")
             w_export.setStyleSheet("#cell_container { background: transparent; }")
             l_export = QHBoxLayout(w_export)
-            l_export.setContentsMargins(2, 2, 2, 2)
+            l_export.setContentsMargins(scaled(2), scaled(2), scaled(2), scaled(2))
             l_export.addWidget(btn_export)
             self.history_table.setCellWidget(row, 6, w_export)
         
@@ -4171,7 +4248,7 @@ class MainWindow(QMainWindow):
             # 操作按钮 - 只保留一个详情按钮，POC编辑在详情窗口中
             btn_detail = QPushButton("详情")
             btn_detail.setToolTip("查看完整漏洞详情，可复制 Payload 和编辑 POC")
-            btn_detail.setStyleSheet(f"""
+            btn_detail.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {FORTRESS_COLORS['btn_info']};
                     color: white;
@@ -4182,7 +4259,7 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{
                     background-color: {FORTRESS_COLORS['btn_info_hover']};
                 }}
-            """)
+            """))
             btn_detail.clicked.connect(lambda checked, vd=v, rd=raw_data: self._show_vuln_detail(vd, rd))
             table.setCellWidget(row, 5, btn_detail)
         
@@ -4675,13 +4752,13 @@ class MainWindow(QMainWindow):
     def setup_poc_tab(self):
         layout = QVBoxLayout(self.poc_tab)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(15)
-        
+        layout.setSpacing(scaled(15))
+
         # ===== 工具栏区域 =====
         toolbar_container = QWidget()
-        toolbar_container.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;")
+        toolbar_container.setStyleSheet(scaled_style(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;"))
         toolbar_layout = QHBoxLayout(toolbar_container)
-        toolbar_layout.setContentsMargins(15, 15, 15, 15)
+        toolbar_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
         
         btn_import_file = self._create_fortress_button("导入文件", "info")
         btn_import_file.clicked.connect(self.import_poc_file)
@@ -4723,13 +4800,13 @@ class MainWindow(QMainWindow):
         
         # ===== 搜索和筛选区域 =====
         filter_container = QWidget()
-        filter_container.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;")
+        filter_container.setStyleSheet(scaled_style(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;"))
         filter_layout = QHBoxLayout(filter_container)
-        filter_layout.setContentsMargins(15, 10, 15, 10)
-        
+        filter_layout.setContentsMargins(scaled(15), scaled(10), scaled(15), scaled(10))
+
         self.poc_search_input = QLineEdit()
         self.poc_search_input.setPlaceholderText("搜索 POC ID/名称/CVE编号/关键词...")
-        self.poc_search_input.setStyleSheet(f"""
+        self.poc_search_input.setStyleSheet(scaled_style(f"""
             QLineEdit {{
                 border: 1px solid {FORTRESS_COLORS['nav_border']};
                 border-radius: 6px;
@@ -4739,7 +4816,7 @@ class MainWindow(QMainWindow):
             QLineEdit:focus {{
                 border-color: {FORTRESS_COLORS['btn_primary']};
             }}
-        """)
+        """))
         self.poc_search_input.textChanged.connect(self.filter_poc_table)
         filter_layout.addWidget(self.poc_search_input, 1)
         
@@ -4747,31 +4824,31 @@ class MainWindow(QMainWindow):
         filter_layout.addWidget(QLabel("来源:"))
         self.poc_source_filter = QComboBox()
         self.poc_source_filter.addItems(["全部", "用户生成", "云端同步", "本地导入"])
-        self.poc_source_filter.setFixedWidth(100)
+        self.poc_source_filter.setFixedWidth(scaled(100))
         self.poc_source_filter.currentTextChanged.connect(self.filter_poc_table)
         filter_layout.addWidget(self.poc_source_filter)
-        
+
         filter_layout.addWidget(QLabel("类型:"))
         self.poc_type_filter = QComboBox()
         self.poc_type_filter.addItems(["全部", "RCE", "SQLi", "XSS", "SSRF", "LFI", "未授权", "信息泄露", "其他"])
-        self.poc_type_filter.setFixedWidth(100)
+        self.poc_type_filter.setFixedWidth(scaled(100))
         self.poc_type_filter.currentTextChanged.connect(self.filter_poc_table)
         filter_layout.addWidget(self.poc_type_filter)
-        
+
         filter_layout.addWidget(QLabel("严重程度:"))
         self.poc_severity_filter = QComboBox()
         self.poc_severity_filter.addItems(["全部", "critical", "high", "medium", "low", "info"])
-        self.poc_severity_filter.setFixedWidth(100)
+        self.poc_severity_filter.setFixedWidth(scaled(100))
         self.poc_severity_filter.currentTextChanged.connect(self.filter_poc_table)
         filter_layout.addWidget(self.poc_severity_filter)
-        
+
         layout.addWidget(filter_container)
-        
+
         # ===== POC 列表表格 =====
         table_container = QWidget()
-        table_container.setStyleSheet(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;")
+        table_container.setStyleSheet(scaled_style(f"background-color: {FORTRESS_COLORS['content_bg']}; border-radius: 8px;"))
         table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(15, 15, 15, 15)
+        table_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
         
         self.poc_table = QTableWidget()
         self.poc_table.setColumnCount(5)
@@ -4797,7 +4874,7 @@ class MainWindow(QMainWindow):
         
         # 提示
         tips = QLabel("双击编辑 | 右键添加到扫描/删除 | 支持多选 (Ctrl+点击)")
-        tips.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;")
+        tips.setStyleSheet(scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;"))
         table_layout.addWidget(tips)
         
         layout.addWidget(table_container, 1)
@@ -5195,14 +5272,14 @@ class MainWindow(QMainWindow):
         
         # ===== 顶部操作栏 =====
         action_bar = QWidget()
-        action_bar.setStyleSheet(f"""
+        action_bar.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {FORTRESS_COLORS['content_bg']};
                 border-radius: 8px;
             }}
-        """)
+        """))
         action_layout = QHBoxLayout(action_bar)
-        action_layout.setContentsMargins(15, 12, 15, 12)
+        action_layout.setContentsMargins(scaled(15), scaled(12), scaled(15), scaled(12))
         
         # 快捷新建扫描按钮
         btn_quick_scan = self._create_fortress_button("新建扫描", "primary")
@@ -5220,15 +5297,15 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(btn_log)
         
         action_layout.addStretch()
-        
+
         # 进度区域
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("%v/%m (%p%)")
-        self.progress_bar.setMinimumWidth(200)
-        self.progress_bar.setMaximumWidth(300)
-        self.progress_bar.setStyleSheet(f"""
+        self.progress_bar.setMinimumWidth(scaled(200))
+        self.progress_bar.setMaximumWidth(scaled(300))
+        self.progress_bar.setStyleSheet(scaled_style(f"""
             QProgressBar {{
                 border: none;
                 border-radius: 4px;
@@ -5240,51 +5317,51 @@ class MainWindow(QMainWindow):
                 background-color: {FORTRESS_COLORS['btn_primary']};
                 border-radius: 4px;
             }}
-        """)
+        """))
         self.progress_bar.hide()
         action_layout.addWidget(self.progress_bar)
-        
+
         self.lbl_progress = QLabel("就绪")
-        self.lbl_progress.setStyleSheet(f"""
+        self.lbl_progress.setStyleSheet(scaled_style(f"""
             font-weight: bold;
             color: {FORTRESS_COLORS['text_secondary']};
             font-size: 13px;
-        """)
+        """))
         action_layout.addWidget(self.lbl_progress)
-        
+
         # 开始/停止按钮
         self.btn_start = self._create_fortress_button("开始扫描", "primary")
-        self.btn_start.setMinimumWidth(100)
+        self.btn_start.setMinimumWidth(scaled(100))
         self.btn_start.clicked.connect(self.start_scan)
         action_layout.addWidget(self.btn_start)
-        
+
         # 暂停/继续按钮
         self.btn_pause = self._create_fortress_button("暂停", "info")
-        self.btn_pause.setMinimumWidth(80)
+        self.btn_pause.setMinimumWidth(scaled(80))
         self.btn_pause.clicked.connect(self.pause_scan)
         self.btn_pause.setEnabled(False)
         self.btn_pause.setToolTip("暂停扫描（当前批次完成后生效）")
         action_layout.addWidget(self.btn_pause)
-        
+
         self.btn_stop = self._create_fortress_button("停止扫描", "warning")
-        self.btn_stop.setMinimumWidth(100)
+        self.btn_stop.setMinimumWidth(scaled(100))
         self.btn_stop.clicked.connect(self.stop_scan)
         self.btn_stop.setEnabled(False)
         action_layout.addWidget(self.btn_stop)
-        
+
         layout.addWidget(action_bar)
-        
+
         # ===== 实时扫描统计面板 =====
         stats_panel = QWidget()
-        stats_panel.setStyleSheet(f"""
+        stats_panel.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {FORTRESS_COLORS['content_bg']};
                 border-radius: 8px;
             }}
-        """)
+        """))
         stats_layout = QHBoxLayout(stats_panel)
-        stats_layout.setContentsMargins(15, 10, 15, 10)
-        stats_layout.setSpacing(20)
+        stats_layout.setContentsMargins(scaled(15), scaled(10), scaled(15), scaled(10))
+        stats_layout.setSpacing(scaled(20))
         
         # 统计卡片
         self.scan_stat_targets = self._create_scan_stat_card("目标数", "0", "#3b82f6")
@@ -5311,34 +5388,34 @@ class MainWindow(QMainWindow):
         
         # ===== 结果表格 =====
         table_container = QWidget()
-        table_container.setStyleSheet(f"""
+        table_container.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {FORTRESS_COLORS['content_bg']};
                 border-radius: 8px;
             }}
-        """)
+        """))
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.result_table = QTableWidget()
         self.result_table.setColumnCount(6)
         self.result_table.setHorizontalHeaderLabels(["状态", "漏洞名称", "严重程度", "目标", "发现时间", "操作"])
-        
+
         # 设置表格样式 - FORTRESS 风格
         from core.fortress_style import get_table_stylesheet
         self.result_table.setStyleSheet(get_table_stylesheet(FORTRESS_COLORS))
-        
+
         # 设置列宽
         header = self.result_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.result_table.setColumnWidth(0, 60)  # 状态列
+        self.result_table.setColumnWidth(0, scaled(60))  # 状态列
         header.setSectionResizeMode(1, QHeaderView.Stretch)  # 漏洞名称
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # 严重程度
         header.setSectionResizeMode(3, QHeaderView.Stretch)  # 目标
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # 发现时间
         header.setSectionResizeMode(5, QHeaderView.Fixed)
-        self.result_table.setColumnWidth(5, 160)  # 操作列 - 扩大宽度确保按钮显示完全
-        self.result_table.verticalHeader().setDefaultSectionSize(50) # 再次增加默认行高
+        self.result_table.setColumnWidth(5, scaled(160))  # 操作列 - 扩大宽度确保按钮显示完全
+        self.result_table.verticalHeader().setDefaultSectionSize(scaled(50)) # 再次增加默认行高
         
         self.result_table.verticalHeader().setVisible(False)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -5359,23 +5436,23 @@ class MainWindow(QMainWindow):
         
         # ===== 日志区域 =====
         log_container = QWidget()
-        log_container.setMaximumHeight(150)
-        log_container.setStyleSheet(f"""
+        log_container.setMaximumHeight(scaled(150))
+        log_container.setStyleSheet(scaled_style(f"""
             QWidget {{
                 background-color: {FORTRESS_COLORS['content_bg']};
                 border-radius: 8px;
             }}
-        """)
+        """))
         log_layout = QVBoxLayout(log_container)
-        log_layout.setContentsMargins(10, 10, 10, 10)
-        
+        log_layout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
+
         log_header = QLabel("扫描日志")
-        log_header.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;")
+        log_header.setStyleSheet(scaled_style(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;"))
         log_layout.addWidget(log_header)
-        
+
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
-        self.log_output.setStyleSheet(f"""
+        self.log_output.setStyleSheet(scaled_style(f"""
             QTextEdit {{
                 background-color: #1e293b;
                 color: #e2e8f0;
@@ -5385,9 +5462,9 @@ class MainWindow(QMainWindow):
                 font-size: 11px;
                 padding: 8px;
             }}
-        """)
+        """))
         log_layout.addWidget(self.log_output)
-        
+
         layout.addWidget(log_container)
         
         # 完整日志存储
@@ -5859,44 +5936,44 @@ class MainWindow(QMainWindow):
         from core.fortress_style import get_table_button_style
         btn_container = QWidget()
         btn_layout = QHBoxLayout(btn_container)
-        btn_layout.setContentsMargins(4, 4, 4, 4)
-        btn_layout.setSpacing(6)
+        btn_layout.setContentsMargins(scaled(4), scaled(4), scaled(4), scaled(4))
+        btn_layout.setSpacing(scaled(6))
         btn_layout.setAlignment(Qt.AlignCenter)
 
         btn_view = QPushButton("查看")
-        btn_view.setStyleSheet(get_table_button_style('info', FORTRESS_COLORS, 50))
+        btn_view.setStyleSheet(get_table_button_style('info', FORTRESS_COLORS, scaled(50)))
         btn_view.setCursor(Qt.PointingHandCursor)
         btn_view.clicked.connect(lambda checked, idx=row: self._show_result_detail_by_row(idx))
         btn_layout.addWidget(btn_view)
 
         btn_report = QPushButton("报告")
-        btn_report.setStyleSheet(get_table_button_style('primary', FORTRESS_COLORS, 50))
+        btn_report.setStyleSheet(get_table_button_style('primary', FORTRESS_COLORS, scaled(50)))
         btn_report.setCursor(Qt.PointingHandCursor)
         btn_report.clicked.connect(lambda checked, idx=row: self._generate_vuln_report_by_row(idx))
         btn_layout.addWidget(btn_report)
 
         self.result_table.setCellWidget(row, 5, btn_container)
-        self.result_table.setRowHeight(row, 45)
-        
+        self.result_table.setRowHeight(row, scaled(45))
+
         # 存储完整结果数据用于详情查看
         self.scan_results_data.append(result)
-        
+
         # 实时更新统计卡片
         self._update_scan_stats(vulns=self.scan_results_data)
-        
+
         # 实时更新仪表盘漏洞数量卡片
         self._update_dashboard_vuln_count_realtime()
-        
+
         # 更新进度标签和状态指示器
         self.lbl_progress.setText(f"已发现 {row + 1} 个漏洞")
         self.status_indicator.setText(f"状态: 扫描中 ({row + 1})")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['btn_warning']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #fff7ed;
             border-radius: 12px;
-        """)
+        """))
     
     def _show_result_detail_by_row(self, row):
         """通过行号显示结果详情"""
@@ -6047,20 +6124,20 @@ class MainWindow(QMainWindow):
         """)
         
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
+        layout.setSpacing(scaled(15))
+        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
+
         # 标题
         info = result.get('info', {})
         severity = info.get('severity', 'unknown')
         title = QLabel(f"{info.get('name', result.get('template-id', 'Unknown'))}")
-        title.setStyleSheet(f"""
+        title.setStyleSheet(scaled_style(f"""
             font-size: 18px;
             font-weight: bold;
             color: {FORTRESS_COLORS['text_primary']};
-        """)
+        """))
         layout.addWidget(title)
-        
+
         # 严重程度标签
         sev_label = QLabel(severity.upper())
         sev_colors = {
@@ -6071,24 +6148,24 @@ class MainWindow(QMainWindow):
             'info': ('#22c55e', '#f0fdf4'),
         }
         fg, bg = sev_colors.get(severity, ('#6b7280', '#f9fafb'))
-        sev_label.setStyleSheet(f"""
+        sev_label.setStyleSheet(scaled_style(f"""
             background-color: {bg};
             color: {fg};
             padding: 4px 12px;
             border-radius: 4px;
             font-weight: bold;
             font-size: 12px;
-        """)
-        sev_label.setMaximumWidth(100)
+        """))
+        sev_label.setMaximumWidth(scaled(100))
         layout.addWidget(sev_label)
-        
+
         # 基本信息
         info_container = QWidget()
         # 根据主题自动调整背景色
         info_bg = FORTRESS_COLORS.get('nav_border', '#2c3e50')  # 深色背景
-        info_container.setStyleSheet(f"background-color: {info_bg}; border-radius: 8px;")
+        info_container.setStyleSheet(scaled_style(f"background-color: {info_bg}; border-radius: 8px;"))
         info_layout = QVBoxLayout(info_container)
-        info_layout.setContentsMargins(15, 15, 15, 15)
+        info_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
         
         fields = [
             ("目标", result.get('matched-at', 'N/A')),
@@ -6100,7 +6177,7 @@ class MainWindow(QMainWindow):
         for label, value in fields:
             row = QHBoxLayout()
             lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']}; min-width: 80px;")
+            lbl.setStyleSheet(scaled_style(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']}; min-width: 80px;"))
             row.addWidget(lbl)
             val = QLabel(str(value))
             val.setWordWrap(True)
@@ -6108,17 +6185,17 @@ class MainWindow(QMainWindow):
             val.setStyleSheet(f"color: {FORTRESS_COLORS['text_primary']};")
             row.addWidget(val, 1)
             info_layout.addLayout(row)
-        
+
         layout.addWidget(info_container)
-        
+
         # JSON 详情
         json_label = QLabel("完整 JSON 数据")
         json_label.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']};")
         layout.addWidget(json_label)
-        
+
         json_text = QTextEdit()
         json_text.setReadOnly(True)
-        json_text.setStyleSheet(f"""
+        json_text.setStyleSheet(scaled_style(f"""
             QTextEdit {{
                 background-color: #1e293b;
                 color: #e2e8f0;
@@ -6128,7 +6205,7 @@ class MainWindow(QMainWindow):
                 font-size: 12px;
                 padding: 10px;
             }}
-        """)
+        """))
         json_text.setPlainText(json.dumps(result, indent=2, ensure_ascii=False))
         layout.addWidget(json_text)
         
@@ -6221,16 +6298,16 @@ class MainWindow(QMainWindow):
             queue.update_task_status(self.current_task_id, TaskStatus.CANCELLED)
         
         self.lbl_progress.setText(f"扫描已停止，耗时 {duration_str}，发现 {result_count} 个漏洞")
-        
+
         # 更新状态指示器
         self.status_indicator.setText("状态: 已停止")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['btn_warning']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #fff7ed;
             border-radius: 12px;
-        """)
+        """))
 
 
     def pause_scan(self):
@@ -6271,33 +6348,33 @@ class MainWindow(QMainWindow):
         self.btn_pause.setToolTip("暂停扫描（当前批次完成后生效）")
         self.lbl_progress.setText("扫描继续中...")
         self.status_indicator.setText("状态: 扫描中")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['btn_warning']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #fff7ed;
             border-radius: 12px;
-        """)
-        
+        """))
+
         # 同步更新任务队列状态
         if hasattr(self, 'current_task_id') and self.current_task_id:
             from core.task_queue_manager import get_task_queue_manager, TaskStatus
             queue = get_task_queue_manager()
             queue.update_task_status(self.current_task_id, TaskStatus.RUNNING)
-    
+
     def _update_pause_ui_to_paused(self):
         """更新 UI 为暂停状态"""
         self.btn_pause.setText("继续")
         self.btn_pause.setToolTip("继续扫描")
         self.lbl_progress.setText("扫描已暂停，点击「继续」按钮恢复扫描")
         self.status_indicator.setText("状态: 已暂停")
-        self.status_indicator.setStyleSheet(f"""
+        self.status_indicator.setStyleSheet(scaled_style(f"""
             color: {FORTRESS_COLORS['btn_info']};
             font-size: 13px;
             padding: 5px 12px;
             background-color: #eff6ff;
             border-radius: 12px;
-        """)
+        """))
         
         # 同步更新任务队列状态
         if hasattr(self, 'current_task_id') and self.current_task_id:
@@ -6572,22 +6649,52 @@ if __name__ == "__main__":
         pass
     
     app = QApplication(sys.argv)
-    
-    # 全局字体设置 - 使用相对大小
+
+    # 获取屏幕信息和系统 DPI 缩放
     from PyQt5.QtWidgets import QDesktopWidget
+    from core.settings_manager import get_settings
     screen = QDesktopWidget().screenGeometry()
-    
-    # 根据屏幕分辨率调整字体大小
-    if screen.width() >= 1920:
+    settings = get_settings()
+
+    # 获取系统 DPI 缩放比例
+    logical_dpi = app.primaryScreen().logicalDotsPerInch()
+    system_scale = logical_dpi / 96.0  # 系统缩放比例
+
+    # 读取用户配置的 UI 缩放，0 表示自动
+    user_scale = settings.get_ui_scale()
+
+    if user_scale > 0:
+        # 用户手动设置了缩放比例
+        set_ui_scale(user_scale)
         font_size = 11
-    elif screen.width() >= 1600:
-        font_size = 10
+        print(f"[DPI Info] Using user-defined UI_SCALE: {user_scale}")
     else:
-        font_size = 9
-    
+        # 自动计算缩放比例
+        # 计算有效分辨率（考虑系统缩放后的逻辑分辨率）
+        effective_width = screen.width() / system_scale
+
+        # 根据有效分辨率设置 UI 缩放因子
+        if effective_width >= 1400:
+            set_ui_scale(1.0)
+            font_size = 11
+        elif effective_width >= 1200:
+            set_ui_scale(1.0)
+            font_size = 11
+        elif effective_width >= 1000:
+            set_ui_scale(1.0)
+            font_size = 11
+        elif effective_width >= 800:
+            set_ui_scale(0.9)
+            font_size = 10
+        else:
+            set_ui_scale(0.85)
+            font_size = 10
+
+        print(f"[DPI Info] Screen: {screen.width()}x{screen.height()}, DPI: {logical_dpi}, System Scale: {system_scale:.0%}, Effective Width: {effective_width:.0f}, UI_SCALE: {UI_SCALE}")
+
     font = QFont("Microsoft YaHei", font_size)
     app.setFont(font)
-    
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

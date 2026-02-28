@@ -208,6 +208,26 @@ class SettingsManager:
         self.settings.setValue("update_auto_check", "true" if enabled else "false")
         self.settings.sync()
 
+    # ============== UI 缩放配置 ==============
+
+    def get_ui_scale(self) -> float:
+        """获取 UI 缩放比例，返回 0 表示自动"""
+        value = self.settings.value("ui_scale", "auto")
+        if value == "auto":
+            return 0.0
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def set_ui_scale(self, scale: float):
+        """设置 UI 缩放比例，0 表示自动"""
+        if scale == 0.0:
+            self.settings.setValue("ui_scale", "auto")
+        else:
+            self.settings.setValue("ui_scale", str(scale))
+        self.settings.sync()
+
 
 
 # 全局单例
