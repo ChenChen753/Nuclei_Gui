@@ -68,6 +68,8 @@ dist/Nuclei_GUI_portable/
 
 Python modules, `i18n/`, and `resources/` are bundled into the executable. `bin/` and `poc_library/` stay beside the executable so Nuclei and POCs can be updated independently. Logs and SQLite databases are stored in the user data directory, such as `%APPDATA%/NucleiGUI/` on Windows.
 
+The executable icon uses `resources/icon.ico` first. If it does not exist, the build automatically converts `resources/icon.png` to a temporary `.ico` file and embeds it into the exe. To change the exe icon, replace `resources/icon.png` and rebuild.
+
 ## Features
 
 - **Dashboard**: scan statistics, vulnerability distribution, history records, quick actions

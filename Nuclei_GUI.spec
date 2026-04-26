@@ -2,6 +2,30 @@
 import os
 
 
+def prepare_windows_icon():
+    ico_path = os.path.join("resources", "icon.ico")
+    if os.path.exists(ico_path):
+        return ico_path
+
+    png_path = os.path.join("resources", "icon.png")
+    generated_ico = os.path.join("build", "generated", "icon.ico")
+    if not os.path.exists(png_path):
+        return None
+
+    os.makedirs(os.path.dirname(generated_ico), exist_ok=True)
+    try:
+        from PyQt5.QtGui import QImage
+
+        image = QImage(png_path)
+        if not image.isNull() and image.save(generated_ico, "ICO"):
+            return generated_ico
+    except Exception:
+        pass
+
+    # PyInstaller can also try image conversion if Pillow is available.
+    return png_path
+
+
 datas = [
     ("i18n/*.json", "i18n"),
     ("resources/*", "resources"),
@@ -11,7 +35,7 @@ hiddenimports = [
     "download_nuclei_with_progress",
 ]
 
-icon_path = "resources/icon.ico" if os.path.exists("resources/icon.ico") else None
+icon_path = prepare_windows_icon()
 
 a = Analysis(
     ["main.py"],

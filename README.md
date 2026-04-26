@@ -122,6 +122,8 @@ dist/Nuclei_GUI_portable/
 
 `i18n/`、`resources/`、源码模块会打进 exe；`bin/` 和 `poc_library/` 保持在 exe 同级，方便后续替换 Nuclei 和维护 POC。运行日志和数据库会写入用户数据目录，例如 Windows 下的 `%APPDATA%/NucleiGUI/`。
 
+程序图标会优先使用 `resources/icon.ico`；如果没有该文件，打包时会自动把 `resources/icon.png` 转成临时 `.ico` 并写入 exe。需要替换 exe 图标时，更新 `resources/icon.png` 后重新运行打包脚本即可。
+
 ## 目录结构
 
 ```
