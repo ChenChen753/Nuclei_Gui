@@ -4797,12 +4797,16 @@ class MainWindow(QMainWindow):
             )
             if file_path:
                 if export_to_html(scan_record, vulns, file_path):
-                    reply = QMessageBox.question(
-                        self, tr("export.export_success"), 
-                        f"Report exported to:\n{file_path}\n\nOpen now?？",
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.Yes
-                    )
+                    msg_box = QMessageBox(self)
+                    msg_box.setIcon(QMessageBox.Question)
+                    msg_box.setWindowTitle(tr("export.export_success"))
+                    msg_box.setText(tr("report.exported_to", filepath=file_path))
+                    msg_box.setInformativeText(tr("report.open_now"))
+                    msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                    msg_box.setDefaultButton(QMessageBox.Yes)
+                    msg_box.button(QMessageBox.Yes).setText(tr("common.yes"))
+                    msg_box.button(QMessageBox.No).setText(tr("common.no"))
+                    reply = msg_box.exec_()
                     if reply == QMessageBox.Yes:
                         import os
                         os.startfile(file_path)
