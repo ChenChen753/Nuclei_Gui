@@ -5,6 +5,8 @@
 import json
 import os
 
+from core.paths import resource_path
+
 # 支持的语言列表
 SUPPORTED_LANGUAGES = {
     'zh_CN': '简体中文',
@@ -14,7 +16,7 @@ SUPPORTED_LANGUAGES = {
 # 当前加载的翻译字典
 _translations = {}
 _current_language = 'zh_CN'
-_translations_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+_translations_dir = str(resource_path("i18n"))
 
 
 def init_language(lang_code='zh_CN'):

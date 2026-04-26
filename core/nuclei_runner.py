@@ -10,6 +10,7 @@ import signal
 from PyQt5.QtCore import QThread, pyqtSignal
 from i18n import tr
 from core.oast_manager import cleanup_oast_plan, prepare_oast_scan
+from core.paths import external_path, log_dir
 from core.target_utils import dedupe_targets
 
 # 导入日志模块
@@ -21,7 +22,8 @@ logger = get_logger("scanner")
 def log_debug(msg):
     """文件调试日志"""
     try:
-        with open("debug_tracing.log", "a", encoding='utf-8') as f:
+        debug_log = log_dir() / "debug_tracing.log"
+        with open(debug_log, "a", encoding='utf-8') as f:
             timestamp = import_datetime.datetime.now().strftime("%H:%M:%S.%f")
             f.write(f"[{timestamp}] {msg}\n")
     except (IOError, OSError):
@@ -32,9 +34,7 @@ def get_nuclei_path():
     跨平台获取 Nuclei 可执行文件路径
     优先级：bin目录下的二进制文件 > 系统PATH中的nuclei
     """
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-    bin_dir = os.path.join(project_root, 'bin')
+    bin_dir = str(external_path('bin'))
     
     # 根据操作系统确定二进制文件名
     system = platform.system().lower()
@@ -341,9 +341,7 @@ class NucleiScanThread(QThread):
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             
             env = os.environ.copy()
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(current_dir)
-            bin_dir = os.path.join(project_root, 'bin')
+            bin_dir = str(external_path('bin'))
             env["PATH"] = bin_dir + os.pathsep + env["PATH"]
             env["PYTHONIOENCODING"] = "utf-8"
             

@@ -15,6 +15,7 @@ from PyQt5.QtGui import QFont
 from core.ui_scale import scaled, scaled_style
 from core.fortress_style import FORTRESS_COLORS, get_dialog_stylesheet, get_button_style, get_secondary_button_style
 from i18n import tr
+from core.paths import external_path
 
 
 class StepWidget(QFrame):
@@ -836,8 +837,7 @@ http:
             QMessageBox.warning(self, tr("msg.error"), content)
             return
         
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        user_poc_dir = os.path.join(base_dir, "poc_library", "user_generated")
+        user_poc_dir = external_path("poc_library", "user_generated")
         
         if not os.path.exists(user_poc_dir):
             os.makedirs(user_poc_dir)
@@ -845,7 +845,7 @@ http:
         safe_name = re.sub(r'[<>:"/\\|?*]', '-', vuln_name)
         safe_name = re.sub(r'-+', '-', safe_name).strip('-')
         filename = f"nuclei-{safe_name}.yaml"
-        file_path = os.path.join(user_poc_dir, filename)
+        file_path = os.path.join(str(user_poc_dir), filename)
         
         if os.path.exists(file_path):
             reply = QMessageBox.question(

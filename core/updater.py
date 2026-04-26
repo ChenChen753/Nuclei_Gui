@@ -13,6 +13,7 @@ import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from i18n import tr
+from core.paths import app_dir
 
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
@@ -30,6 +31,7 @@ PRESERVE_FILES = [
 ]
 
 PRESERVE_DIRS = [
+    "bin",
     "poc_library/custom",
     "poc_library/user_generated",
     "logs",
@@ -185,7 +187,7 @@ class UpdateDownloadThread(QThread):
         temp_zip = None
 
         try:
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            project_root = str(app_dir())
 
             self.progress_signal.emit(5, tr("update.preparing_download"))
 

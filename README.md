@@ -97,11 +97,40 @@ python main.py
 python3 main.py
 ```
 
+### Windows 二进制打包
+
+项目内置 PyInstaller 打包配置，适合发布为便携目录：
+
+```powershell
+.\build_package.ps1
+# 或双击/命令行运行
+.\build_package.bat
+```
+
+打包完成后会生成：
+
+```text
+dist/Nuclei_GUI_portable/
+  Nuclei_GUI.exe
+  bin/
+    nuclei.exe
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+`i18n/`、`resources/`、源码模块会打进 exe；`bin/` 和 `poc_library/` 保持在 exe 同级，方便后续替换 Nuclei 和维护 POC。运行日志和数据库会写入用户数据目录，例如 Windows 下的 `%APPDATA%/NucleiGUI/`。
+
 ## 目录结构
 
 ```
 ├── main.py                          # 主程序入口
 ├── requirements.txt                 # Python 依赖
+├── requirements-build.txt           # 打包依赖
+├── Nuclei_GUI.spec                  # PyInstaller 打包配置
+├── build_package.ps1                # Windows 快速打包脚本
+├── build_package.bat                # Windows 打包入口
 ├── Run_Nuclei_GUI.bat               # Windows 启动脚本
 ├── run_nuclei_gui.sh                # macOS/Linux 启动脚本
 │

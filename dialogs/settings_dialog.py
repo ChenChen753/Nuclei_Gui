@@ -15,6 +15,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from i18n import tr
+from core.paths import is_frozen
 from core.ui_scale import scaled, scaled_style
 from core.settings_manager import get_settings
 from core.updater import (
@@ -31,80 +32,21 @@ class NucleiDownloadThread(QThread):
     
     def run(self):
         try:
-            import subprocess
-            import sys
-            import os
-            
             self.progress_signal.emit(tr("settings.nuclei.checking"))
             self.progress_percent_signal.emit(0)
-            
-            # 调用带进度的下载脚本
-            script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "download_nuclei_with_progress.py")
-            
-            if os.path.exists(script_path):
-                env = os.environ.copy()
-                env["PYTHONIOENCODING"] = "utf-8"
-                # 实时读取输出
-                process = subprocess.Popen([sys.executable, script_path],
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT,
-                                         text=True,
-                                         bufsize=1,
-                                         encoding='utf-8',
-                                         errors='replace',
-                                         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                         env=env)
-                
-                success = False
-                error_output = []
-                
-                for line in iter(process.stdout.readline, ''):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    if line.startswith("PROGRESS:"):
-                        # 解析进度: PROGRESS:percent:message
-                        parts = line.split(":", 2)
-                        if len(parts) >= 3:
-                            try:
-                                percent = int(parts[1])
-                                message = parts[2]
-                                self.progress_percent_signal.emit(percent)
-                                self.progress_signal.emit(message)
-                                
-                                if percent == 100 and "安装完成" in message:
-                                    success = True
-                            except ValueError:
-                                pass
-                    elif line.startswith("STATUS:"):
-                        # 解析状态: STATUS:message
-                        message = line[7:]  # 去掉 "STATUS:" 前缀
-                        self.progress_signal.emit(message)
-                    else:
-                        # 其他输出作为错误信息收集
-                        error_output.append(line)
-                
-                process.wait()
-                
-                if success or process.returncode == 0:
-                    self.finished_signal.emit(True, tr("settings.nuclei.install_success"))
-                else:
-                    error_msg = "\n".join(error_output) if error_output else tr("settings.nuclei.install_failed")
-                    # 检查是否是网络问题
-                    if "ProxyError" in error_msg or "ConnectionError" in error_msg or "网络错误" in error_msg:
-                        self.finished_signal.emit(False,
-                            tr("settings.nuclei.network_error"))
-                    elif "未找到 Nuclei" in error_msg or "下载失败" in error_msg:
-                        self.finished_signal.emit(False,
-                            tr("settings.nuclei.not_found_manual"))
-                    else:
-                        self.finished_signal.emit(False, tr("settings.nuclei.install_failed_detail", error=error_msg))
+
+            from download_nuclei_with_progress import download_with_callback
+
+            def on_progress(message, percent=None):
+                if percent is not None:
+                    self.progress_percent_signal.emit(int(percent))
+                self.progress_signal.emit(str(message))
+
+            if download_with_callback(on_progress):
+                self.finished_signal.emit(True, tr("settings.nuclei.install_success"))
             else:
-                self.finished_signal.emit(False, tr("settings.nuclei.script_not_found"))
+                self.finished_signal.emit(False, tr("settings.nuclei.install_failed"))
                 
-        except subprocess.TimeoutExpired:
-            self.finished_signal.emit(False, tr("settings.nuclei.download_timeout"))
         except Exception as e:
             self.finished_signal.emit(False, tr("settings.nuclei.download_error", error=str(e)))
 
@@ -687,6 +629,8 @@ class SettingsDialog(QDialog):
         import sys
         import os
         python = sys.executable
+        if is_frozen():
+            os.execl(python, python)
         script = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "main.py"

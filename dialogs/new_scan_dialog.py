@@ -13,6 +13,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from core.target_utils import parse_targets_text
 from core.ui_scale import scaled, scaled_style
+from core.paths import resource_path
 from i18n import tr
 
 # FORTRESS 风格颜色
@@ -47,6 +48,7 @@ class NewScanDialog(QDialog):
         table_header = c.get('table_header', '#f9fafb')
         input_bg = c.get('table_header') if c.get('is_dark') else 'white' # 深色模式下输入框背景使用稍浅的颜色
 
+        check_icon = str(resource_path("resources", "check.svg")).replace("\\", "/")
         self.setStyleSheet(scaled_style(f"""
             QDialog {{
                 background-color: {bg_color};
@@ -108,7 +110,7 @@ class NewScanDialog(QDialog):
             QTableWidget::indicator:checked {{
                 background-color: {btn_primary};
                 border-color: {btn_primary};
-                image: url(resources/check.svg);
+                image: url({check_icon});
             }}
             QTableWidget::indicator:checked:disabled {{
                 background-color: {border_color};

@@ -7,13 +7,15 @@ import json
 import os
 from datetime import datetime
 
+from core.paths import database_path
+
 
 class HistoryManager:
     """通用历史记录管理器"""
 
     def __init__(self, db_path: str = None):
         if db_path is None:
-            db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "history.db")
+            db_path = str(database_path("history.db"))
         self.db_path = db_path
         self.init_db()
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 from i18n import tr
+from core.paths import log_dir
 
 
 class LoggerManager:
@@ -31,8 +32,7 @@ class LoggerManager:
         LoggerManager._initialized = True
         
         # 日志目录
-        self.log_dir = Path(os.path.dirname(os.path.dirname(__file__))) / "logs"
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir = log_dir()
         
         # 日志文件路径
         self.log_file = self.log_dir / "nuclei_gui.log"

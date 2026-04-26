@@ -7,6 +7,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from core.paths import database_path
+
 
 class ScanHistory:
     """
@@ -17,7 +19,7 @@ class ScanHistory:
     def __init__(self, db_path: str = None):
         if db_path is None:
             # 默认存储在程序目录下
-            db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scan_history.db")
+            db_path = str(database_path("scan_history.db"))
         self.db_path = db_path
         self.init_db()
     

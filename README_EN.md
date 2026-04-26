@@ -43,6 +43,31 @@ The repository does not include `bin/nuclei.exe`. Large Nuclei binaries should n
 python main.py
 ```
 
+### Windows Binary Packaging
+
+The project includes a reusable PyInstaller configuration for portable releases:
+
+```powershell
+.\build_package.ps1
+# or
+.\build_package.bat
+```
+
+The build creates:
+
+```text
+dist/Nuclei_GUI_portable/
+  Nuclei_GUI.exe
+  bin/
+    nuclei.exe
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+Python modules, `i18n/`, and `resources/` are bundled into the executable. `bin/` and `poc_library/` stay beside the executable so Nuclei and POCs can be updated independently. Logs and SQLite databases are stored in the user data directory, such as `%APPDATA%/NucleiGUI/` on Windows.
+
 ## Features
 
 - **Dashboard**: scan statistics, vulnerability distribution, history records, quick actions

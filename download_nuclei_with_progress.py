@@ -15,9 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from i18n import tr, init_language
+from core.paths import external_path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BIN_DIR = SCRIPT_DIR / "bin"
+BIN_DIR = external_path("bin")
 DEFAULT_VERSION = "v3.8.0"
 LATEST_RELEASE_API = "https://api.github.com/repos/projectdiscovery/nuclei/releases/latest"
 USER_AGENT = "Nuclei-GUI-Downloader"
@@ -45,6 +46,21 @@ def print_progress(message, percent=None):
     else:
         print(f"STATUS:{message}")
     sys.stdout.flush()
+
+
+def download_with_callback(callback):
+    """Run the downloader with an in-process progress callback."""
+    global print_progress
+    original_print_progress = print_progress
+
+    def _callback_progress(message, percent=None):
+        callback(message, percent)
+
+    print_progress = _callback_progress
+    try:
+        return download_with_progress()
+    finally:
+        print_progress = original_print_progress
 
 
 def create_session(proxies=None, trust_env=False):

@@ -19,6 +19,7 @@ from core.settings_manager import get_settings
 from core.ai_client import AIWorkerThreadV2
 from core.history_manager import get_history_manager
 from i18n import tr
+from core.paths import external_path
 
 
 class AIAssistantDialog(QDialog):
@@ -222,10 +223,10 @@ class AIAssistantDialog(QDialog):
 
         # 保存到 user_generated 目录
         import os
-        poc_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "poc_library", "user_generated")
+        poc_dir = external_path("poc_library", "user_generated")
         os.makedirs(poc_dir, exist_ok=True)
 
-        filepath = os.path.join(poc_dir, filename)
+        filepath = os.path.join(str(poc_dir), filename)
 
         # 检查文件是否存在
         if os.path.exists(filepath):

@@ -16,6 +16,7 @@ from core.ui_scale import (
     set_ui_scale, get_ui_scale, scaled, scaled_f, scaled_style,
     calculate_auto_ui_scale,
 )
+from core.paths import ensure_external_layout, external_path, resource_path, is_frozen
 from i18n import tr
 
 # ================= 主题管理系统 =================
@@ -266,17 +267,16 @@ class MainWindow(QMainWindow):
         from PyQt5.QtGui import QIcon
         
         # 图标文件路径优先级：icon.ico > icon.png
-        base_path = os.path.dirname(os.path.abspath(__file__))
         icon_paths = [
-            os.path.join(base_path, "resources", "icon.ico"),
-            os.path.join(base_path, "resources", "icon.png"),
-            os.path.join(base_path, "icon.ico"),
-            os.path.join(base_path, "icon.png"),
+            resource_path("resources", "icon.ico"),
+            resource_path("resources", "icon.png"),
+            external_path("icon.ico"),
+            external_path("icon.png"),
         ]
         
         for icon_path in icon_paths:
             if os.path.exists(icon_path):
-                self.setWindowIcon(QIcon(icon_path))
+                self.setWindowIcon(QIcon(str(icon_path)))
                 return
         
         # 如果没有找到图标文件，使用默认图标（可选：打印提示）
@@ -605,7 +605,7 @@ class MainWindow(QMainWindow):
 
         # GitHub 按钮
         btn_github = QPushButton()
-        btn_github.setIcon(QIcon(str(Path(__file__).parent / "resources" / "github.svg")))
+        btn_github.setIcon(QIcon(str(resource_path("resources", "github.svg"))))
         btn_github.setIconSize(QSize(scaled(18), scaled(18)))
         btn_github.setFixedSize(scaled(24), scaled(24))
         btn_github.setCursor(Qt.PointingHandCursor)
@@ -2194,8 +2194,7 @@ class MainWindow(QMainWindow):
             return
             
         # 获取待扫描目标
-        from core.target_manager import get_target_manager
-        targets = get_target_manager().get_targets()
+        targets = parse_targets_text(self.txt_targets.toPlainText() if hasattr(self, "txt_targets") else "")
         if not targets:
             QMessageBox.warning(self, tr("msg.hint"), tr("scan.add_targets_first"))
             self._switch_page(0) # 扫描结果页
@@ -3678,10 +3677,9 @@ class MainWindow(QMainWindow):
         import sys
         import os
         python = sys.executable
-        script = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "main.py"
-        )
+        if is_frozen():
+            os.execl(python, python)
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
         os.execl(python, python, script)
 
     
@@ -3772,48 +3770,15 @@ class MainWindow(QMainWindow):
                 def run(self):
                     try:
                         self.progress_signal.emit(tr("nuclei.downloading"))
-                        
-                        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_nuclei_with_progress.py")
-                        
-                        if os.path.exists(script_path):
-                            env = os.environ.copy()
-                            env["PYTHONIOENCODING"] = "utf-8"
-                            # 使用Popen实时读取输出
-                            process = subprocess.Popen([sys.executable, script_path],
-                                                     stdout=subprocess.PIPE, 
-                                                     stderr=subprocess.STDOUT,
-                                                     text=True, 
-                                                     bufsize=1,
-                                                     encoding='utf-8',
-                                                     errors='replace',
-                                                     cwd=os.path.dirname(os.path.abspath(__file__)),
-                                                     env=env)
-                            
-                            # 实时读取输出
-                            while True:
-                                output = process.stdout.readline()
-                                if output == '' and process.poll() is not None:
-                                    break
-                                if output:
-                                    line = output.strip()
-                                    if line.startswith("PROGRESS:"):
-                                        parts = line.split(":", 2)
-                                        if len(parts) == 3:
-                                            self.progress_signal.emit(parts[2])
-                                    elif line.startswith("STATUS:"):
-                                        self.progress_signal.emit(line[7:])
-                                    elif line:
-                                        self.progress_signal.emit(line)
-                            
-                            # 等待进程完成
-                            return_code = process.wait()
-                            
-                            if return_code == 0:
-                                self.finished_signal.emit(True, tr("nuclei.download_complete"))
-                            else:
-                                self.finished_signal.emit(False, tr("nuclei.download_failed"))
+                        from download_nuclei_with_progress import download_with_callback
+
+                        def on_progress(message, percent=None):
+                            self.progress_signal.emit(str(message))
+
+                        if download_with_callback(on_progress):
+                            self.finished_signal.emit(True, tr("nuclei.download_complete"))
                         else:
-                            self.finished_signal.emit(False, tr("nuclei.script_not_found"))
+                            self.finished_signal.emit(False, tr("nuclei.download_failed"))
                             
                     except Exception as e:
                         self.finished_signal.emit(False, tr("nuclei.download_error", error=str(e)))
@@ -6675,48 +6640,15 @@ def install_exception_hook():
                 def run(self):
                     try:
                         self.progress_signal.emit(tr("nuclei.downloading"))
-                        
-                        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_nuclei_with_progress.py")
-                        
-                        if os.path.exists(script_path):
-                            env = os.environ.copy()
-                            env["PYTHONIOENCODING"] = "utf-8"
-                            # 使用Popen实时读取输出
-                            process = subprocess.Popen([sys.executable, script_path],
-                                                     stdout=subprocess.PIPE, 
-                                                     stderr=subprocess.STDOUT,
-                                                     text=True, 
-                                                     bufsize=1,
-                                                     encoding='utf-8',
-                                                     errors='replace',
-                                                     cwd=os.path.dirname(os.path.abspath(__file__)),
-                                                     env=env)
-                            
-                            # 实时读取输出
-                            while True:
-                                output = process.stdout.readline()
-                                if output == '' and process.poll() is not None:
-                                    break
-                                if output:
-                                    line = output.strip()
-                                    if line.startswith("PROGRESS:"):
-                                        parts = line.split(":", 2)
-                                        if len(parts) == 3:
-                                            self.progress_signal.emit(parts[2])
-                                    elif line.startswith("STATUS:"):
-                                        self.progress_signal.emit(line[7:])
-                                    elif line:
-                                        self.progress_signal.emit(line)
-                            
-                            # 等待进程完成
-                            return_code = process.wait()
-                            
-                            if return_code == 0:
-                                self.finished_signal.emit(True, tr("nuclei.download_complete"))
-                            else:
-                                self.finished_signal.emit(False, tr("nuclei.download_failed"))
+                        from download_nuclei_with_progress import download_with_callback
+
+                        def on_progress(message, percent=None):
+                            self.progress_signal.emit(str(message))
+
+                        if download_with_callback(on_progress):
+                            self.finished_signal.emit(True, tr("nuclei.download_complete"))
                         else:
-                            self.finished_signal.emit(False, tr("nuclei.script_not_found"))
+                            self.finished_signal.emit(False, tr("nuclei.download_failed"))
                             
                     except Exception as e:
                         self.finished_signal.emit(False, tr("nuclei.download_error", error=str(e)))
@@ -6766,6 +6698,7 @@ if __name__ == "__main__":
     from PyQt5.QtCore import Qt
     
     install_exception_hook()
+    ensure_external_layout()
     
     # 启用高 DPI 缩放支持
     try:

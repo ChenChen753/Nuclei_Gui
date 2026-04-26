@@ -4,6 +4,7 @@ FORTRESS 风格共享样式和组件
 支持动态主题切换
 """
 from core.ui_scale import scaled_style
+from core.paths import resource_path
 
 def _get_table_stylesheet_raw(colors):
     """获取表格通用样式（未缩放，供内部嵌入使用）"""
@@ -347,6 +348,7 @@ def get_global_stylesheet(colors=None):
     input_bg = colors.get('table_header', '#334155') if is_dark else 'white'
     scroll_bg = colors.get('nav_border', '#334155')
     scroll_handle = '#64748b' if is_dark else '#cbd5e1'
+    check_icon = str(resource_path("resources", "check.svg")).replace("\\", "/")
 
     return scaled_style(f"""
         /* 滚动条样式 */
@@ -531,7 +533,7 @@ def get_global_stylesheet(colors=None):
         QCheckBox::indicator:checked {{
             background-color: {colors.get('btn_primary', '#2563eb')};
             border-color: {colors.get('btn_primary', '#2563eb')};
-            image: url(resources/check.png); /* 如果没有图片，用纯色也可以，或者暂时这样 */
+            image: url({check_icon});
         }}
         QRadioButton::indicator:checked {{
             background-color: {colors.get('btn_primary', '#2563eb')};

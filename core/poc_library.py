@@ -4,6 +4,7 @@ import yaml
 import time
 
 from i18n import tr
+from core.paths import ensure_external_layout, external_path
 
 class POCLibrary:
     """POC 库管理器 - 负责 POC 的导入、存储和读取"""
@@ -11,7 +12,8 @@ class POCLibrary:
     def __init__(self, library_path: str = None):
         # 默认使用当前目录下的 poc_library 文件夹
         if library_path is None:
-            self.library_path = Path("poc_library")
+            ensure_external_layout()
+            self.library_path = external_path("poc_library")
         else:
             self.library_path = Path(library_path)
         

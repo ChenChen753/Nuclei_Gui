@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 
 from i18n import tr, get_current_language
+from core.paths import external_path, resource_path
 
 
 def _export_labels():
@@ -118,7 +119,7 @@ def _export_labels():
 
 def _load_chart_js():
     """加载本地 Chart.js 源码用于内联到 HTML 报告"""
-    chart_js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'resources', 'chart.umd.min.js')
+    chart_js_path = resource_path('resources', 'chart.umd.min.js')
     try:
         with open(chart_js_path, 'r', encoding='utf-8') as f:
             return f.read()
@@ -132,8 +133,7 @@ def _build_poc_cache():
     try:
         from pathlib import Path
         import yaml
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        poc_library = Path(base_dir) / "poc_library"
+        poc_library = external_path("poc_library")
         if poc_library.exists():
             for yaml_file in poc_library.rglob("*.yaml"):
                 try:

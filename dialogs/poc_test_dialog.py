@@ -15,6 +15,7 @@ import tempfile
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ui_scale import scaled, scaled_style
+from core.nuclei_runner import get_nuclei_path
 from i18n import tr
 
 
@@ -32,13 +33,7 @@ class QuickTestThread(QThread):
     
     def run(self):
         # 获取 nuclei 路径
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(current_dir)
-        
-        nuclei_cmd = "nuclei"
-        bin_nuclei = os.path.join(project_root, 'bin', 'nuclei.exe')
-        if os.path.exists(bin_nuclei):
-            nuclei_cmd = bin_nuclei
+        nuclei_cmd = get_nuclei_path()
         
         try:
             cmd = [
