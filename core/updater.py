@@ -18,7 +18,7 @@ from core.paths import app_dir
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.0"
+CURRENT_VERSION = "2.5.1"
 
 # 更新时需要保留的文件/目录（不会被覆盖）
 PRESERVE_FILES = [

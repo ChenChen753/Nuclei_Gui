@@ -6,7 +6,7 @@ A PyQt5-based graphical interface for Nuclei. It provides POC management, asset 
 
 ## Project Info
 
-- **Version**: 2.5.0
+- **Version**: 2.5.1
 - **Author**: 辰辰
 - **Tech Stack**: Python 3.x + PyQt5 + Nuclei
 - **Platforms**: Windows / macOS / Linux
@@ -121,6 +121,11 @@ You must not use this tool for:
 The author and contributors are not responsible for any misuse, abuse, unauthorized use, or direct or indirect damages caused by this tool. By downloading, installing, running, or redistributing this tool, you acknowledge that you understand and accept all risks and legal responsibilities.
 
 ## Changelog
+
+### v2.5.1
+
+- Improved portable packaging by generating the Windows exe icon from `resources/icon.png` during builds.
+- Fixed the localized report export success prompt and buttons in the Chinese UI.
 
 ### v2.5.0
 

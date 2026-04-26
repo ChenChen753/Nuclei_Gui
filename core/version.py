@@ -5,8 +5,8 @@
 
 from i18n import tr
 
-__version__ = "2.5.0"
-__version_info__ = (2, 5, 0)
+__version__ = "2.5.1"
+__version_info__ = (2, 5, 1)
 __author__ = "辰辰"
 __app_name__ = "Nuclei GUI Scanner"
 
