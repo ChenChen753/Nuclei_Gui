@@ -8,6 +8,7 @@ import base64
 import json
 from typing import Optional
 
+from i18n import tr
 from core.logger import get_logger
 
 logger = get_logger("secure_storage")
@@ -25,7 +26,7 @@ class SecureStorage:
     
     def __init__(self):
         self._backend = self._detect_backend()
-        logger.info("安全存储后端: " + self._backend)
+        logger.info(tr("storage.backend_info", backend=self._backend))
     
     def _detect_backend(self) -> str:
         """检测可用的加密后端"""
@@ -46,7 +47,7 @@ class SecureStorage:
             pass
         
         # 回退到 base64（不安全）
-        logger.warning("未找到安全存储后端，将使用 base64 编码（不安全）")
+        logger.warning(tr("storage.no_secure_backend"))
         return "base64"
     
     def store(self, key: str, value: str) -> bool:
@@ -71,7 +72,7 @@ class SecureStorage:
             else:
                 return self._store_base64(key, value)
         except Exception as e:
-            logger.error("存储敏感数据失败 [" + key + "]: " + str(e))
+            logger.error(tr("storage.store_failed", key=key, error=str(e)))
             return False
     
     def retrieve(self, key: str) -> Optional[str]:
@@ -92,7 +93,7 @@ class SecureStorage:
             else:
                 return self._retrieve_base64(key)
         except Exception as e:
-            logger.error("获取敏感数据失败 [" + key + "]: " + str(e))
+            logger.error(tr("storage.retrieve_failed", key=key, error=str(e)))
             return None
     
     def delete(self, key: str) -> bool:
@@ -113,7 +114,7 @@ class SecureStorage:
             else:
                 return self._delete_base64(key)
         except Exception as e:
-            logger.error("删除敏感数据失败 [" + key + "]: " + str(e))
+            logger.error(tr("storage.delete_failed", key=key, error=str(e)))
             return False
     
     # ============== Windows DPAPI 后端 ==============
@@ -153,7 +154,7 @@ class SecureStorage:
                 f.write(encrypted_data)
             return True
         except Exception as e:
-            logger.error("DPAPI 加密保存失败: " + str(e))
+            logger.error(tr("storage.dpapi_save_failed", error=str(e)))
             return False
     
     def _store_dpapi(self, key: str, value: str) -> bool:
@@ -222,7 +223,7 @@ class SecureStorage:
                 json.dump(encoded_data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
-            logger.error("Base64 保存失败: " + str(e))
+            logger.error(tr("storage.base64_save_failed", error=str(e)))
             return False
     
     def _store_base64(self, key: str, value: str) -> bool:

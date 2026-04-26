@@ -11,6 +11,9 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QSplitter, QCheckBox, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+from core.target_utils import parse_targets_text
+from core.ui_scale import scaled, scaled_style
+from i18n import tr
 
 # FORTRESS 风格颜色
 # 移除静态定义的 FORTRESS_COLORS，改用动态传入
@@ -26,9 +29,9 @@ class NewScanDialog(QDialog):
         self.poc_library = poc_library
         self.selected_pocs = []
         self.initial_pocs = initial_pocs or []  # 初始选中的 POC 路径列表
-        self.setWindowTitle("新建扫描任务")
-        self.setMinimumSize(900, 650)
-        self.resize(1000, 700)
+        self.setWindowTitle(tr("scan.new_scan_title"))
+        self.setMinimumSize(scaled(900), scaled(650))
+        self.resize(scaled(1000), scaled(700))
         self._init_ui()
         self._load_pocs()
     
@@ -44,7 +47,7 @@ class NewScanDialog(QDialog):
         table_header = c.get('table_header', '#f9fafb')
         input_bg = c.get('table_header') if c.get('is_dark') else 'white' # 深色模式下输入框背景使用稍浅的颜色
 
-        self.setStyleSheet(f"""
+        self.setStyleSheet(scaled_style(f"""
             QDialog {{
                 background-color: {bg_color};
             }}
@@ -115,44 +118,44 @@ class NewScanDialog(QDialog):
             QTableWidget::indicator:hover {{
                 border-color: {btn_primary};
             }}
-        """)
-        
+        """))
+
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
+        layout.setSpacing(scaled(15))
+        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
+
         # 标题
-        title = QLabel("配置扫描任务")
-        title.setStyleSheet(f"""
+        title = QLabel(tr("scan.configure_task"))
+        title.setStyleSheet(scaled_style(f"""
             font-size: 18px;
             font-weight: bold;
             color: {text_primary};
             margin-bottom: 10px;
-        """)
+        """))
         layout.addWidget(title)
         
         # 主内容区（左右分栏）
         splitter = QSplitter(Qt.Horizontal)
         
         # 左侧：目标设置
-        left_panel = QGroupBox("目标设置")
+        left_panel = QGroupBox(tr("scan.target_settings"))
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(10)
+        left_layout.setSpacing(scaled(10))
         
         # 目标输入框
         self.txt_targets = QPlainTextEdit()
-        self.txt_targets.setPlaceholderText("请输入目标 URL，每行一个\n例如：\nhttp://example.com\nhttps://test.site:8080/path")
-        self.txt_targets.setMinimumHeight(200)
+        self.txt_targets.setPlaceholderText(tr("scan.target_placeholder"))
+        self.txt_targets.setMinimumHeight(scaled(200))
         left_layout.addWidget(self.txt_targets)
         
         # 导入按钮
-        btn_import = self._create_button("从文件导入目标", "secondary")
+        btn_import = self._create_button(tr("scan.import_from_file"), "secondary")
         btn_import.clicked.connect(self._import_targets)
         left_layout.addWidget(btn_import)
         
         # 目标统计
-        self.lbl_target_count = QLabel("已输入 0 个目标")
-        self.lbl_target_count.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
+        self.lbl_target_count = QLabel(tr("scan.target_count", count=0))
+        self.lbl_target_count.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
         left_layout.addWidget(self.lbl_target_count)
         
         self.txt_targets.textChanged.connect(self._update_target_count)
@@ -161,22 +164,22 @@ class NewScanDialog(QDialog):
         splitter.addWidget(left_panel)
         
         # 右侧：POC 选择
-        right_panel = QGroupBox("POC 选择")
+        right_panel = QGroupBox(tr("scan.poc_selection"))
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(scaled(10))
         
         # 搜索和筛选行
         filter_row = QHBoxLayout()
         
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("搜索 POC 名称/ID...")
+        self.txt_search.setPlaceholderText(tr("scan.search_poc_placeholder"))
         self.txt_search.textChanged.connect(self._filter_pocs)
         filter_row.addWidget(self.txt_search, 1)
         
-        filter_row.addWidget(QLabel("严重级别:"))
+        filter_row.addWidget(QLabel(tr("scan.severity_label")))
         self.cmb_severity = QComboBox()
-        self.cmb_severity.addItems(["全部", "critical", "high", "medium", "low", "info"])
-        self.cmb_severity.setFixedWidth(120)
+        self.cmb_severity.addItems([tr("common.all"), "critical", "high", "medium", "low", "info"])
+        self.cmb_severity.setFixedWidth(scaled(120))
         self.cmb_severity.currentTextChanged.connect(self._filter_pocs)
         filter_row.addWidget(self.cmb_severity)
         
@@ -185,13 +188,12 @@ class NewScanDialog(QDialog):
         # POC 列表
         self.poc_table = QTableWidget()
         self.poc_table.setColumnCount(4)
-        self.poc_table.setHorizontalHeaderLabels(["选择", "ID", "名称", "级别"])
-        self.poc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.poc_table.setColumnWidth(0, 60)
+        self.poc_table.setHorizontalHeaderLabels([tr("scan.col_select"), tr("scan.col_id"), tr("scan.col_name"), tr("scan.col_severity")])
+        self.poc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         
         # ID 列：改为交互式并设置固定初始宽度，防止过长导致水平滚动
         self.poc_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Interactive)
-        self.poc_table.setColumnWidth(1, 280)
+        self.poc_table.setColumnWidth(1, scaled(280))
         
         # 名称列：自动填充剩余空间
         self.poc_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
@@ -213,19 +215,19 @@ class NewScanDialog(QDialog):
         # POC 操作按钮
         poc_btn_row = QHBoxLayout()
         
-        btn_select_all = self._create_button("全选", "secondary")
+        btn_select_all = self._create_button(tr("common.select_all"), "secondary")
         btn_select_all.clicked.connect(self._select_all_pocs)
         poc_btn_row.addWidget(btn_select_all)
         
-        btn_deselect_all = self._create_button("取消全选", "secondary")
+        btn_deselect_all = self._create_button(tr("common.deselect_all"), "secondary")
         btn_deselect_all.clicked.connect(self._deselect_all_pocs)
         poc_btn_row.addWidget(btn_deselect_all)
         
         poc_btn_row.addStretch()
         
         # 已选 POC 按钮（点击可查看并取消选择）
-        self.btn_selected_pocs = QPushButton("已选择 0 个 POC")
-        self.btn_selected_pocs.setStyleSheet(f"""
+        self.btn_selected_pocs = QPushButton(tr("scan.selected_poc_count", count=0))
+        self.btn_selected_pocs.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 color: {btn_primary};
                 background-color: transparent;
@@ -236,35 +238,33 @@ class NewScanDialog(QDialog):
             QPushButton:hover {{
                 color: {c.get('btn_primary_hover', btn_primary)};
             }}
-        """)
+        """))
         self.btn_selected_pocs.setCursor(Qt.PointingHandCursor)
         self.btn_selected_pocs.clicked.connect(self._show_selected_pocs)
         poc_btn_row.addWidget(self.btn_selected_pocs)
-        
+
         right_layout.addLayout(poc_btn_row)
-        
+
         splitter.addWidget(right_panel)
-        splitter.setSizes([400, 500])
-        
+        splitter.setSizes([scaled(400), scaled(500)])
+
         layout.addWidget(splitter, 1)
         
         # 底部按钮
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         
-        btn_cancel = self._create_button("取消", "secondary")
+        btn_cancel = self._create_button(tr("common.cancel"), "secondary")
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_cancel)
         
         # 加入队列按钮
-        btn_queue = self._create_button("加入队列", "secondary")
-        btn_queue.setMinimumWidth(100)
+        btn_queue = self._create_button(tr("scan.add_to_queue"), "secondary")
         btn_queue.clicked.connect(self._add_to_queue)
-        btn_queue.setToolTip("将任务添加到扫描队列，稍后手动启动")
+        btn_queue.setToolTip(tr("scan.add_to_queue_tooltip"))
         btn_row.addWidget(btn_queue)
-        
-        btn_save = self._create_button("立即扫描", "primary")
-        btn_save.setMinimumWidth(120)
+
+        btn_save = self._create_button(tr("scan.scan_now"), "primary")
         btn_save.clicked.connect(self._save_config)
         btn_row.addWidget(btn_save)
         
@@ -277,15 +277,15 @@ class NewScanDialog(QDialog):
     def _create_button(self, text, btn_type='primary'):
         """创建按钮"""
         btn = QPushButton(text)
-        btn.setMinimumHeight(38)
+        btn.setMinimumHeight(scaled(38))
         btn.setCursor(Qt.PointingHandCursor)
-        
+
         c = self.colors
         if btn_type == 'primary':
             btn_primary = c.get('btn_primary', '#2563eb')
             btn_primary_hover = c.get('btn_primary_hover', '#1d4ed8')
-            
-            btn.setStyleSheet(f"""
+
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {btn_primary};
                     color: white;
@@ -298,15 +298,15 @@ class NewScanDialog(QDialog):
                 QPushButton:hover {{
                     background-color: {btn_primary_hover};
                 }}
-            """)
+            """))
         else:
             c = self.colors
             text_primary = c.get('text_primary', '#1f2937')
             border_color = c.get('nav_border', '#e5e7eb')
             bg_light = c.get('table_header', '#f9fafb')
             btn_bg = 'transparent' if c.get('is_dark') else 'white'
-             
-            btn.setStyleSheet(f"""
+
+            btn.setStyleSheet(scaled_style(f"""
                 QPushButton {{
                     background-color: {btn_bg};
                     color: {text_primary};
@@ -318,8 +318,8 @@ class NewScanDialog(QDialog):
                 QPushButton:hover {{
                     background-color: {bg_light};
                 }}
-            """)
-        
+            """))
+
         return btn
     
     def _load_pocs(self):
@@ -420,7 +420,7 @@ class NewScanDialog(QDialog):
                     show = False
             
             # 严重程度筛选
-            if severity != "全部":
+            if severity != tr("common.all"):
                 sev_item = self.poc_table.item(row, 3)
                 if sev_item and sev_item.text() != severity:
                     show = False
@@ -456,7 +456,7 @@ class NewScanDialog(QDialog):
             item = self.poc_table.item(row, 0)
             if item and item.checkState() == Qt.Checked:
                 count += 1
-        self.btn_selected_pocs.setText(f"已选择 {count} 个 POC（点击查看）")
+        self.btn_selected_pocs.setText(tr("scan.selected_poc_count_click", count=count))
     
     def _show_selected_pocs(self):
         """显示已选 POC 列表弹窗，可取消选择"""
@@ -472,13 +472,13 @@ class NewScanDialog(QDialog):
                 selected.append((row, poc_id, poc_name))
         
         if not selected:
-            QMessageBox.information(self, "提示", "当前未选择任何 POC")
+            QMessageBox.information(self, tr("msg.hint"), tr("scan.no_poc_selected"))
             return
         
         # 创建弹窗
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"已选择的 POC ({len(selected)} 个)")
-        dialog.resize(500, 400)
+        dialog.setWindowTitle(tr("scan.selected_poc_dialog_title", count=len(selected)))
+        dialog.resize(scaled(500), scaled(400))
         
         # 简单样式适配
         c = self.colors
@@ -486,18 +486,18 @@ class NewScanDialog(QDialog):
         fg = c.get('text_primary', '#000000')
         btn_bg = c.get('btn_primary', '#2563eb')
         
-        dialog.setStyleSheet(f"QDialog {{ background-color: {bg}; color: {fg}; }} QLabel {{ color: {fg}; }}")
+        dialog.setStyleSheet(scaled_style(f"QDialog {{ background-color: {bg}; color: {fg}; }} QLabel {{ color: {fg}; }}"))
         
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
         
-        tip = QLabel("点击列表项可取消选择该 POC：")
+        tip = QLabel(tr("scan.click_to_deselect"))
         layout.addWidget(tip)
         
         # 列表
         from PyQt5.QtWidgets import QListWidget, QListWidgetItem
         list_widget = QListWidget()
-        list_widget.setStyleSheet(f"background-color: {c.get('table_row_alt', '#f9fafb')}; border: 1px solid {c.get('nav_border', '#e5e7eb')}; color: {fg};")
+        list_widget.setStyleSheet(scaled_style(f"background-color: {c.get('table_row_alt', '#f9fafb')}; border: 1px solid {c.get('nav_border', '#e5e7eb')}; color: {fg};"))
         
         for row, poc_id, poc_name in selected:
             item = QListWidgetItem(f"{poc_id} - {poc_name}")
@@ -512,7 +512,7 @@ class NewScanDialog(QDialog):
                 main_item.setCheckState(Qt.Unchecked)
             
             list_widget.takeItem(list_widget.row(item))
-            dialog.setWindowTitle(f"已选择的 POC ({list_widget.count()} 个)")
+            dialog.setWindowTitle(tr("scan.selected_poc_dialog_title", count=list_widget.count()))
             
             # 实时更新外面主界面的计数
             self._update_poc_count()
@@ -526,9 +526,9 @@ class NewScanDialog(QDialog):
         # 按钮
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(tr("common.close"))
         btn_close.clicked.connect(dialog.accept)
-        btn_close.setStyleSheet(f"padding: 6px 15px; border-radius: 4px; background-color: #e5e7eb; color: #333;")
+        btn_close.setStyleSheet(scaled_style(f"padding: 6px 15px; border-radius: 4px; background-color: #e5e7eb; color: #333;"))
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
         
@@ -548,25 +548,23 @@ class NewScanDialog(QDialog):
     def _update_target_count(self):
         """更新目标数量"""
         text = self.txt_targets.toPlainText().strip()
-        count = len([t for t in text.split('\n') if t.strip()]) if text else 0
-        self.lbl_target_count.setText(f"已输入 {count} 个目标")
+        count = len(parse_targets_text(text)) if text else 0
+        self.lbl_target_count.setText(tr("scan.target_count", count=count))
     
     def _import_targets(self):
         """从文件导入目标"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择目标文件", "", "文本文件 (*.txt);;所有文件 (*.*)"
+            self, tr("scan.select_target_file"), "", tr("scan.file_filter_txt")
         )
         if file_path:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     targets = f.read()
                 current = self.txt_targets.toPlainText()
-                if current.strip():
-                    self.txt_targets.setPlainText(current + "\n" + targets)
-                else:
-                    self.txt_targets.setPlainText(targets)
+                merged_targets = parse_targets_text(current + "\n" + targets)
+                self.txt_targets.setPlainText("\n".join(merged_targets))
             except Exception as e:
-                QMessageBox.warning(self, "错误", f"读取文件失败：{str(e)}")
+                QMessageBox.warning(self, tr("msg.error"), tr("scan.read_file_failed", error=str(e)))
     
     def _add_to_queue(self):
         """加入队列"""
@@ -574,11 +572,11 @@ class NewScanDialog(QDialog):
         pocs = self.get_selected_pocs()
         
         if not targets:
-            QMessageBox.warning(self, "提示", "请输入扫描目标")
+            QMessageBox.warning(self, tr("msg.hint"), tr("scan.please_input_targets"))
             return
-        
+
         if not pocs:
-            QMessageBox.warning(self, "提示", "请选择至少一个 POC")
+            QMessageBox.warning(self, tr("msg.hint"), tr("scan.please_select_poc"))
             return
         
         self.action_mode = 'queue'
@@ -592,11 +590,11 @@ class NewScanDialog(QDialog):
         pocs = self.get_selected_pocs()
         
         if not targets:
-            QMessageBox.warning(self, "提示", "请输入扫描目标")
+            QMessageBox.warning(self, tr("msg.hint"), tr("scan.please_input_targets"))
             return
-        
+
         if not pocs:
-            QMessageBox.warning(self, "提示", "请选择至少一个 POC")
+            QMessageBox.warning(self, tr("msg.hint"), tr("scan.please_select_poc"))
             return
         
         self.action_mode = 'scan'
@@ -611,7 +609,7 @@ class NewScanDialog(QDialog):
         text = self.txt_targets.toPlainText().strip()
         if not text:
             return []
-        return [t.strip() for t in text.split('\n') if t.strip()]
+        return parse_targets_text(text)
     
     def get_selected_pocs(self):
         """获取选中的 POC 路径列表"""

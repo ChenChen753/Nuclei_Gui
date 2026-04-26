@@ -3,6 +3,8 @@ from pathlib import Path
 import yaml
 import time
 
+from i18n import tr
+
 class POCLibrary:
     """POC 库管理器 - 负责 POC 的导入、存储和读取"""
     
@@ -60,15 +62,15 @@ class POCLibrary:
         
         # 验证文件
         if not source.exists():
-            return {"success": False, "error": "文件不存在"}
+            return {"success": False, "error": tr("poc.file_not_found")}
         
         if source.suffix not in ['.yaml', '.yml']:
-            return {"success": False, "error": "必须是 YAML 文件"}
+            return {"success": False, "error": tr("poc.must_be_yaml")}
         
         # 解析模板获取信息
         poc_info = self._parse_poc(source)
         if not poc_info:
-            return {"success": False, "error": "无效的 Nuclei 模板格式 (缺少 id 或 info 字段)"}
+            return {"success": False, "error": tr("poc.invalid_template_format")}
         
         final_path = source
         
@@ -89,7 +91,7 @@ class POCLibrary:
                 # 使缓存失效
                 self.invalidate_cache()
             except Exception as e:
-                return {"success": False, "error": f"复制文件失败: {str(e)}"}
+                return {"success": False, "error": tr("poc.copy_failed", error=str(e))}
         else:
             poc_info["synced_path"] = str(source)
             poc_info["is_synced"] = False
@@ -166,15 +168,15 @@ class POCLibrary:
             
             return {
                 "id": data.get("id", "unknown"),
-                "name": data["info"].get("name", "未命名"),
-                "author": data["info"].get("author", "未知"),
+                "name": data["info"].get("name", tr("poc.unnamed")),
+                "author": data["info"].get("author", tr("poc.unknown")),
                 "severity": data["info"].get("severity", "unknown"),
                 "description": data["info"].get("description", ""),
                 "tags": data["info"].get("tags", ""),
                 "filename": path.name
             }
         except Exception as e:
-            print(f"解析出错 {path}: {e}")
+            print(f"[!] {tr('poc.parse_error', path=str(path), e=str(e))}")
             return None
     
     def _get_unique_name(self, path: Path) -> Path:

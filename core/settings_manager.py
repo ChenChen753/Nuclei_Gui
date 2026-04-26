@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from PyQt5.QtCore import QSettings
 
+from i18n import tr
 from core.secure_storage import get_secure_storage
 
 
@@ -148,7 +149,15 @@ class SettingsManager:
             "no_httpx": str(self.settings.value("scan_no_httpx", "false")).lower() == "true",
             "verbose": str(self.settings.value("scan_verbose", "false")).lower() == "true",
             "proxy": self.settings.value("scan_proxy", ""),
-            "use_native_scanner": str(self.settings.value("scan_use_native", "false")).lower() == "true"
+            "use_native_scanner": str(self.settings.value("scan_use_native", "false")).lower() == "true",
+            "oast_mode": self.settings.value("scan_oast_mode", "auto"),
+            "oast_server": self.settings.value("scan_oast_server", ""),
+            "oast_token": self.settings.value("scan_oast_token", ""),
+            "oast_poll_duration": int(self.settings.value("scan_oast_poll_duration", 5)),
+            "oast_cooldown_period": int(self.settings.value("scan_oast_cooldown_period", 5)),
+            "oast_cache_size": int(self.settings.value("scan_oast_cache_size", 5000)),
+            "oast_eviction": int(self.settings.value("scan_oast_eviction", 60)),
+            "oast_adapt_legacy": str(self.settings.value("scan_oast_adapt_legacy", "true")).lower() == "true"
         }
     
     def save_scan_config(self, config: dict):
@@ -163,13 +172,34 @@ class SettingsManager:
         self.settings.setValue("scan_verbose", "true" if config.get("verbose") else "false")
         self.settings.setValue("scan_proxy", config.get("proxy", ""))
         self.settings.setValue("scan_use_native", "true" if config.get("use_native_scanner") else "false")
+        self.settings.setValue("scan_oast_mode", config.get("oast_mode", "auto"))
+        self.settings.setValue("scan_oast_server", config.get("oast_server", ""))
+        self.settings.setValue("scan_oast_token", config.get("oast_token", ""))
+        self.settings.setValue("scan_oast_poll_duration", config.get("oast_poll_duration", 5))
+        self.settings.setValue("scan_oast_cooldown_period", config.get("oast_cooldown_period", 5))
+        self.settings.setValue("scan_oast_cache_size", config.get("oast_cache_size", 5000))
+        self.settings.setValue("scan_oast_eviction", config.get("oast_eviction", 60))
+        self.settings.setValue("scan_oast_adapt_legacy", "true" if config.get("oast_adapt_legacy", True) else "false")
         self.settings.sync()  # 强制同步到磁盘
     
     # ============== 主题配置 ==============
-    
+
+    # 旧中文主题名 → 新英文内部 key 的迁移映射
+    _THEME_MIGRATION = {
+        "经典蓝": "classic_blue",
+        "深邃蓝": "deep_blue",
+        "清新绿": "fresh_green",
+        "优雅紫": "elegant_purple",
+    }
+
     def get_current_theme(self) -> str:
         """获取当前主题名称"""
-        return self.settings.value("theme_name", "经典蓝")
+        theme = self.settings.value("theme_name", "classic_blue")
+        # 自动迁移旧中文主题名
+        if theme in self._THEME_MIGRATION:
+            theme = self._THEME_MIGRATION[theme]
+            self.save_current_theme(theme)
+        return theme
     
     def save_current_theme(self, theme_name: str):
         """保存当前主题名称"""
@@ -226,6 +256,15 @@ class SettingsManager:
             self.settings.setValue("ui_scale", "auto")
         else:
             self.settings.setValue("ui_scale", str(scale))
+        self.settings.sync()
+
+    def get_language(self) -> str:
+        """获取界面语言，默认 zh_CN"""
+        return self.settings.value("language", "zh_CN")
+
+    def set_language(self, lang_code: str):
+        """设置界面语言"""
+        self.settings.setValue("language", lang_code)
         self.settings.sync()
 
 

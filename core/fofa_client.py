@@ -4,6 +4,7 @@ FOFA API 客户端 - 支持第三方 API 接口
 import base64
 import requests
 from PyQt5.QtCore import QThread, pyqtSignal
+from i18n import tr
 
 
 class FofaSearchThread(QThread):
@@ -24,12 +25,12 @@ class FofaSearchThread(QThread):
     
     def run(self):
         try:
-            self.progress_signal.emit("正在连接 FOFA API...")
+            self.progress_signal.emit(tr("search.fofa.connecting"))
             client = FofaClient(self.api_url, self.email, self.api_key)
             results = client.search(self.query, self.page_size)
             self.result_signal.emit(results)
         except Exception as e:
-            self.error_signal.emit(f"搜索失败: {str(e)}")
+            self.error_signal.emit(tr("search.search_failed_with_error", error=str(e)))
 
 
 class FofaClient:
@@ -57,7 +58,7 @@ class FofaClient:
         :return: 搜索结果列表 [{"host": "xxx", "ip": "xxx", "port": "xxx", "title": "xxx"}, ...]
         """
         if not self.api_url or not self.api_key:
-            raise ValueError("请先配置 FOFA API 地址和密钥")
+            raise ValueError(tr("search.fofa.config_required"))
         
         # Base64 编码查询语句
         query_b64 = base64.b64encode(query.encode('utf-8')).decode('utf-8')
@@ -85,7 +86,7 @@ class FofaClient:
             
             # 检查错误
             if data.get("error"):
-                raise ValueError(data.get("errmsg", "未知错误"))
+                raise ValueError(data.get("errmsg", tr("search.unknown_error")))
             
             # 解析结果
             results = []
@@ -119,9 +120,9 @@ class FofaClient:
             return results
             
         except requests.RequestException as e:
-            raise ValueError(f"网络请求失败: {str(e)}")
+            raise ValueError(tr("search.network_request_failed", error=str(e)))
         except Exception as e:
-            raise ValueError(f"解析响应失败: {str(e)}")
+            raise ValueError(tr("search.parse_response_failed", error=str(e)))
     
     def test_connection(self) -> bool:
         """

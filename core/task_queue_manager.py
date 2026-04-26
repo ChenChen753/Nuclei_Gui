@@ -14,7 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QMutex, QWaitCondition, QTimer, QCoreApplication
 
+from i18n import tr
 from core.logger import get_logger
+from core.target_utils import dedupe_targets
 
 logger = get_logger("task_queue")
 
@@ -29,14 +31,46 @@ class TaskPriority(IntEnum):
 
 
 class TaskStatus(Enum):
-    """任务状态枚举"""
-    PENDING = "等待中"
-    RUNNING = "运行中"
-    PAUSED = "已暂停"
-    COMPLETED = "已完成"
-    CANCELLED = "已取消"
-    FAILED = "失败"
-    SCHEDULED = "已计划"
+    """任务状态枚举 - 使用英文内部键，显示名通过 display_name() 获取"""
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    SCHEDULED = "scheduled"
+
+    # 旧版中文值到新英文键的映射（用于反序列化兼容）
+    _LEGACY_MAP = {
+        "等待中": "pending",
+        "运行中": "running",
+        "已暂停": "paused",
+        "已完成": "completed",
+        "已取消": "cancelled",
+        "失败": "failed",
+        "已计划": "scheduled",
+    }
+
+    @classmethod
+    def _missing_(cls, value):
+        """兼容旧版中文值的反序列化"""
+        mapped = cls._LEGACY_MAP.value.get(value)
+        if mapped:
+            return cls(mapped)
+        return None
+
+    def display_name(self):
+        """获取显示名称（支持多语言）"""
+        _DISPLAY_MAP = {
+            "pending": "task_status.pending",
+            "running": "task_status.running",
+            "paused": "task_status.paused",
+            "completed": "task_status.completed",
+            "cancelled": "task_status.cancelled",
+            "failed": "task_status.failed",
+            "scheduled": "task_status.scheduled",
+        }
+        return tr(_DISPLAY_MAP.get(self.value, self.value))
 
 
 @dataclass
@@ -158,6 +192,12 @@ class TaskQueueWorker(QThread):
     def __init__(self, task: ScanTask, scan_config: Dict = None):
         super().__init__()
         self.task = task
+        if scan_config is None:
+            try:
+                from core.settings_manager import get_settings
+                scan_config = get_settings().get_scan_config()
+            except Exception:
+                scan_config = {}
         self.scan_config = scan_config or {}
         self._is_paused = False
         self._is_cancelled = False
@@ -170,36 +210,36 @@ class TaskQueueWorker(QThread):
         self.task.status = TaskStatus.RUNNING
         self.task.started_at = datetime.now()
         self.task_started.emit(self.task.id)
-        self.log_signal.emit(f"[DEBUG] Worker 线程已启动 (TaskID: {self.task.id})")
+        self.log_signal.emit(f"[DEBUG] Worker thread started (TaskID: {self.task.id})")
 
         try:
             # 导入扫描线程
-            self.log_signal.emit("[DEBUG] 正在导入 NucleiScanThread...")
+            self.log_signal.emit("[DEBUG] Importing NucleiScanThread...")
             from core.nuclei_runner import NucleiScanThread
-            self.log_signal.emit("[DEBUG] NucleiScanThread 导入成功")
+            self.log_signal.emit("[DEBUG] NucleiScanThread imported successfully")
 
             # 检查是否取消
             if self._is_cancelled:
-                self.log_signal.emit("[DEBUG] 任务已取消，终止执行")
+                self.log_signal.emit("[DEBUG] Task cancelled, aborting")
                 self.task.status = TaskStatus.CANCELLED
                 return
 
             # 调试：打印 targets 和 templates 信息
-            self.log_signal.emit(f"[DEBUG] Targets 类型: {type(self.task.targets)}")
-            self.log_signal.emit(f"[DEBUG] Targets 数量: {len(self.task.targets)}")
+            self.log_signal.emit(f"[DEBUG] Targets type: {type(self.task.targets)}")
+            self.log_signal.emit(f"[DEBUG] Targets count: {len(self.task.targets)}")
             if self.task.targets:
-                self.log_signal.emit(f"[DEBUG] 第一个 Target: {self.task.targets[0]}")
-                self.log_signal.emit(f"[DEBUG] 第一个 Target 类型: {type(self.task.targets[0])}")
+                self.log_signal.emit(f"[DEBUG] First target: {self.task.targets[0]}")
+                self.log_signal.emit(f"[DEBUG] First target type: {type(self.task.targets[0])}")
             else:
-                self.log_signal.emit("[WARNING] Targets 列表为空!")
+                self.log_signal.emit("[WARNING] Targets list is empty!")
 
-            self.log_signal.emit(f"[DEBUG] Templates 数量: {len(self.task.templates)}")
+            self.log_signal.emit(f"[DEBUG] Templates count: {len(self.task.templates)}")
             if self.task.templates:
-                self.log_signal.emit(f"[DEBUG] 第一个 Template: {self.task.templates[0]}")
+                self.log_signal.emit(f"[DEBUG] First template: {self.task.templates[0]}")
             else:
-                self.log_signal.emit("[WARNING] Templates 列表为空!")
+                self.log_signal.emit("[WARNING] Templates list is empty!")
 
-            self.log_signal.emit(f"[DEBUG] 正在创建 NucleiScanThread...")
+            self.log_signal.emit("[DEBUG] Creating NucleiScanThread...")
 
             # 处理 custom_args：如果是字典则转换为列表，如果是列表则直接使用
             custom_args = self.task.custom_args
@@ -223,9 +263,10 @@ class TaskQueueWorker(QThread):
                 rate_limit=self.scan_config.get('rate_limit', 150),
                 bulk_size=self.scan_config.get('bulk_size', 25),
                 custom_args=custom_args,
-                use_native_scanner=self.scan_config.get('use_native_scanner', False)
+                use_native_scanner=self.scan_config.get('use_native_scanner', False),
+                oast_config=self.scan_config
             )
-            self.log_signal.emit(f"[DEBUG] NucleiScanThread 创建成功, Templates: {len(self.task.templates)}, 第一个: {self.task.templates[0] if self.task.templates else 'None'}")
+            self.log_signal.emit(f"[DEBUG] NucleiScanThread created, Templates: {len(self.task.templates)}, first: {self.task.templates[0] if self.task.templates else 'None'}")
             
             # 连接信号
             results = []
@@ -252,14 +293,16 @@ class TaskQueueWorker(QThread):
 
             # 连接 finished_signal 以便调试
             def on_finished():
-                self.log_signal.emit("[DEBUG] NucleiScanThread finished_signal 收到")
+                self.log_signal.emit("[DEBUG] NucleiScanThread finished_signal received")
 
             self._scan_thread.finished_signal.connect(on_finished)
 
-            self.log_signal.emit("[DEBUG] 正在启动 NucleiScanThread.start()...")
+            self.log_signal.emit("[DEBUG] Starting NucleiScanThread.start()...")
             # 启动扫描
             self._scan_thread.start()
-            self.log_signal.emit("[DEBUG] NucleiScanThread.start() 已调用")
+            if self._is_paused:
+                self._scan_thread.pause()
+            self.log_signal.emit("[DEBUG] NucleiScanThread.start() called")
 
             # 调试：写入文件
             def debug_log(msg):
@@ -270,15 +313,15 @@ class TaskQueueWorker(QThread):
                 except:
                     pass
 
-            debug_log("NucleiScanThread.start() 已调用")
+            debug_log("NucleiScanThread.start() called")
 
             # 等待完成，同时支持暂停和取消
             loop_count = 0
             while self._scan_thread.isRunning():
                 loop_count += 1
                 if loop_count % 100 == 0:  # 每5秒输出一次
-                    self.log_signal.emit(f"[DEBUG] 等待扫描完成... (循环 {loop_count})")
-                    debug_log(f"等待扫描完成... (循环 {loop_count}), isRunning={self._scan_thread.isRunning()}")
+                    self.log_signal.emit(f"[DEBUG] Waiting for scan to complete... (loop {loop_count})")
+                    debug_log(f"Waiting for scan to complete... (loop {loop_count}), isRunning={self._scan_thread.isRunning()}")
 
                 # 检查暂停
                 self._pause_mutex.lock()
@@ -299,13 +342,13 @@ class TaskQueueWorker(QThread):
                 # 短暂等待
                 if self._scan_thread.wait(50):
                     # 线程已结束
-                    self.log_signal.emit("[DEBUG] wait() 返回 True，线程已结束")
+                    self.log_signal.emit("[DEBUG] wait() returned True, thread finished")
                     break
 
                 # 处理事件循环
                 QCoreApplication.processEvents()
             
-            self.log_signal.emit("[DEBUG] 子线程 isRunning() 返回 False, 循环结束")
+            self.log_signal.emit("[DEBUG] Child thread isRunning() returned False, loop ended")
             
             # 任务完成
             self.task.status = TaskStatus.COMPLETED
@@ -326,15 +369,44 @@ class TaskQueueWorker(QThread):
     def pause(self):
         """暂停任务"""
         self._pause_mutex.lock()
+        if self._is_paused:
+            self._pause_mutex.unlock()
+            return True
         self._is_paused = True
+        self.task.status = TaskStatus.PAUSED
+        scan_thread = self._scan_thread
         self._pause_mutex.unlock()
+
+        if scan_thread and scan_thread.isRunning() and not scan_thread.is_paused():
+            if not scan_thread.pause():
+                self._pause_mutex.lock()
+                self._is_paused = False
+                self.task.status = TaskStatus.RUNNING
+                self._pause_condition.wakeAll()
+                self._pause_mutex.unlock()
+                return False
+        return True
     
     def resume(self):
         """恢复任务"""
         self._pause_mutex.lock()
+        if not self._is_paused:
+            self._pause_mutex.unlock()
+            return True
         self._is_paused = False
+        self.task.status = TaskStatus.RUNNING
+        scan_thread = self._scan_thread
         self._pause_condition.wakeAll()
         self._pause_mutex.unlock()
+
+        if scan_thread and scan_thread.isRunning() and scan_thread.is_paused():
+            if not scan_thread.resume():
+                self._pause_mutex.lock()
+                self._is_paused = True
+                self.task.status = TaskStatus.PAUSED
+                self._pause_mutex.unlock()
+                return False
+        return True
     
     def cancel(self):
         """取消任务"""
@@ -392,6 +464,7 @@ class TaskQueueManager(QObject):
         返回:
             任务ID
         """
+        targets = dedupe_targets(targets)
         task = ScanTask(
             name=name,
             targets=targets,
@@ -409,7 +482,7 @@ class TaskQueueManager(QObject):
         self.task_added.emit(task.id)
         self.queue_updated.emit()
         
-        logger.info(f"任务已添加: {task.id} - {name} (优先级: {priority.name}, 自动启动: {auto_start})")
+        logger.info(tr("task_status.task_added_log", id=task.id, name=name, priority=priority.name, auto_start=auto_start))
         
         # 只有设置了 auto_start=True 且不是定时任务时才自动启动
         if auto_start and not scheduled_at:
@@ -433,6 +506,7 @@ class TaskQueueManager(QObject):
         返回:
             任务ID
         """
+        targets = dedupe_targets(targets)
         task = ScanTask(
             id=task_id,
             name=name,
@@ -448,7 +522,7 @@ class TaskQueueManager(QObject):
         self.task_added.emit(task.id)
         self.queue_updated.emit()
         
-        logger.info(f"外部任务已注册: {task.id} - {name} (状态: {status.value})")
+        logger.info(tr("task_status.external_task_registered", id=task.id, name=name, status=status.value))
         return task.id
     
     def update_task_progress(self, task_id: str, progress: int, vuln_count: int = None):
@@ -480,7 +554,7 @@ class TaskQueueManager(QObject):
         
         task.priority = new_priority
         self.queue_updated.emit()
-        logger.info(f"任务 {task_id} 优先级已修改为 {new_priority.name}")
+        logger.info(tr("task_status.priority_changed", id=task_id, priority=new_priority.name))
         return True
     
     def get_worker(self, task_id: str):
@@ -549,7 +623,7 @@ class TaskQueueManager(QObject):
             try:
                 pre_start_callback(task_id)
             except Exception as e:
-                logger.error(f"任务启动回调执行失败: {e}")
+                logger.error(tr("task_status.start_callback_failed", error=e))
         
         worker.start()
     
@@ -564,7 +638,7 @@ class TaskQueueManager(QObject):
     
     def _on_task_completed(self, task_id: str, result: Dict):
         """任务完成"""
-        logger.info(f"任务完成: {task_id}")
+        logger.info(tr("task_status.task_completed_log", id=task_id))
         task = self._tasks.get(task_id)
         if task:
             task.status = TaskStatus.COMPLETED
@@ -591,7 +665,7 @@ class TaskQueueManager(QObject):
     
     def _on_task_failed(self, task_id: str, error: str):
         """任务失败"""
-        logger.error(f"任务失败: {task_id}, 错误: {error}")
+        logger.error(tr("task_status.task_failed_log", id=task_id, error=error))
         task = self._tasks.get(task_id)
         if task:
             task.status = TaskStatus.FAILED
@@ -613,20 +687,26 @@ class TaskQueueManager(QObject):
         """暂停任务"""
         worker = self._workers.get(task_id)
         if worker:
-            worker.pause()
-            self.task_status_changed.emit(task_id, TaskStatus.PAUSED.value)
-            self.queue_updated.emit()
-            return True
+            if worker.pause():
+                task = self._tasks.get(task_id)
+                if task:
+                    task.status = TaskStatus.PAUSED
+                self.task_status_changed.emit(task_id, TaskStatus.PAUSED.value)
+                self.queue_updated.emit()
+                return True
         return False
     
     def resume_task(self, task_id: str) -> bool:
         """恢复任务"""
         worker = self._workers.get(task_id)
         if worker:
-            worker.resume()
-            self.task_status_changed.emit(task_id, TaskStatus.RUNNING.value)
-            self.queue_updated.emit()
-            return True
+            if worker.resume():
+                task = self._tasks.get(task_id)
+                if task:
+                    task.status = TaskStatus.RUNNING
+                self.task_status_changed.emit(task_id, TaskStatus.RUNNING.value)
+                self.queue_updated.emit()
+                return True
         return False
     
     def cancel_task(self, task_id: str) -> bool:
@@ -662,11 +742,11 @@ class TaskQueueManager(QObject):
         """
         task = self._tasks.get(task_id)
         if not task:
-            logger.warning(f"任务 {task_id} 不存在")
+            logger.warning(tr("task_status.task_not_found", id=task_id))
             return False
         
         if task.status != TaskStatus.PENDING:
-            logger.warning(f"任务 {task_id} 状态为 {task.status.value}，无法启动")
+            logger.warning(tr("task_status.cannot_start_status", id=task_id, status=task.status.value))
             return False
         
         # 检查是否已达到最大并发数
@@ -676,11 +756,11 @@ class TaskQueueManager(QObject):
         )
         
         if running_count >= self.max_concurrent:
-            logger.warning(f"已达到最大并发数 {self.max_concurrent}，无法启动更多任务")
+            logger.warning(tr("task_status.max_concurrent_reached", max=self.max_concurrent))
             return False
         
         self._start_task(task_id)
-        logger.info(f"任务 {task_id} 已手动启动")
+        logger.info(tr("task_status.task_manually_started", id=task_id))
         return True
     
     def get_tasks_by_status(self, status: TaskStatus) -> List[ScanTask]:

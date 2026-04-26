@@ -3,6 +3,8 @@ import json
 import logging
 from PyQt5.QtCore import QThread, pyqtSignal
 
+from i18n import tr
+
 class AIWorkerThread(QThread):
     """
     后台线程执行 AI 请求，避免阻塞 UI
@@ -23,7 +25,7 @@ class AIWorkerThread(QThread):
             result = client.generate_fofa_rule(self.poc_name)
             self.result_signal.emit(result)
         except Exception as e:
-            self.error_signal.emit(f"发生错误: {str(e)}")
+            self.error_signal.emit(tr("ai.error_occurred", error=str(e)))
 
 class AIClient:
     """
@@ -39,13 +41,13 @@ class AIClient:
         根据 POC 名称生成 FOFA 语法
         """
         if not self.api_url or not self.api_key:
-            return "错误: 请先配置 API 地址和密钥"
-            
+            return tr("ai.config_required")
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        
+
         # 优化后的 Prompt，提供真实 FOFA 语法规则参考
         prompt = f"""你是一个资深网络安全专家。请根据漏洞/POC 名称："{poc_name}"，提供以下信息：
 
@@ -101,15 +103,15 @@ class AIClient:
                 content = result['choices'][0]['message']['content']
                 return content
             else:
-                return f"请求失败 (状态码 {response.status_code}): {response.text}"
-                
+                return tr("ai.request_failed", status=response.status_code, detail=response.text)
+
         except Exception as e:
-            return f"发生异常: {str(e)}"
-    
+            return tr("ai.exception_occurred", error=str(e))
+
     def _call_api(self, prompt: str, system_prompt: str = "You are a helpful cybersecurity assistant.") -> str:
         """通用 API 调用方法"""
         if not self.api_url or not self.api_key:
-            return "错误: 请先配置 API 地址和密钥"
+            return tr("ai.config_required")
         
         headers = {
             "Content-Type": "application/json",
@@ -136,9 +138,9 @@ class AIClient:
                 result = response.json()
                 return result['choices'][0]['message']['content']
             else:
-                return f"请求失败 (状态码 {response.status_code}): {response.text}"
+                return tr("ai.request_failed", status=response.status_code, detail=response.text)
         except Exception as e:
-            return f"发生异常: {str(e)}"
+            return tr("ai.exception_occurred", error=str(e))
     
     def generate_poc(self, vuln_description: str) -> str:
         """根据漏洞描述生成 Nuclei POC"""
@@ -281,8 +283,8 @@ class AIWorkerThreadV2(QThread):
             elif self.task_type == self.TASK_RECOMMEND:
                 result = client.recommend_pocs(self.content)
             else:
-                result = "未知任务类型"
+                result = tr("ai.unknown_task_type")
             
             self.result_signal.emit(result)
         except Exception as e:
-            self.error_signal.emit(f"发生错误: {str(e)}")
+            self.error_signal.emit(tr("ai.error_occurred", error=str(e)))

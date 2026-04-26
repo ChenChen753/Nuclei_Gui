@@ -6,7 +6,11 @@ import threading
 import datetime as import_datetime
 import traceback
 import platform
+import signal
 from PyQt5.QtCore import QThread, pyqtSignal
+from i18n import tr
+from core.oast_manager import cleanup_oast_plan, prepare_oast_scan
+from core.target_utils import dedupe_targets
 
 # 导入日志模块
 from core.logger import get_logger, log_exception
@@ -83,7 +87,7 @@ class NucleiScanThread(QThread):
     BATCH_THRESHOLD = 100
     BATCH_SIZE = 50
     
-    def __init__(self, targets, templates, rate_limit=150, bulk_size=25, custom_args=None, use_native_scanner=False):
+    def __init__(self, targets, templates, rate_limit=150, bulk_size=25, custom_args=None, use_native_scanner=False, oast_config=None):
         super().__init__()
         self.targets = self._normalize_targets(targets)
         self.templates = templates
@@ -91,6 +95,7 @@ class NucleiScanThread(QThread):
         self.bulk_size = bulk_size
         self.custom_args = custom_args or []
         self.use_native_scanner = use_native_scanner
+        self.oast_config = oast_config or {}
         self._is_running = True
         self._is_paused = False
         self._pause_event = threading.Event()
@@ -107,23 +112,14 @@ class NucleiScanThread(QThread):
         log_debug(f"_normalize_targets 输入: 类型={type(targets)}, 数量={len(targets) if targets else 0}")
         if targets:
             log_debug(f"_normalize_targets 第一个元素: {targets[0]}, 类型={type(targets[0])}")
-        normalized = []
-        for target in targets:
-            if not isinstance(target, str):
-                log_debug(f"_normalize_targets 跳过非字符串: {target}, 类型={type(target)}")
-                continue
-            target = target.strip()
-            if not target: continue
-            if not target.startswith(('http://', 'https://')):
-                target = 'http://' + target
-            normalized.append(target)
+        normalized = dedupe_targets(targets)
         log_debug(f"_normalize_targets 输出: 数量={len(normalized)}")
         return normalized
 
     def run(self):
         log_debug("run() 方法被调用")
         try:
-            self.log_signal.emit(f"[DEBUG] UI信道测试: run入口")
+            self.log_signal.emit(f"[DEBUG] UI signal test: run entry")
             
             if self.use_native_scanner:
                 log_debug("模式: Native Scanner")
@@ -137,7 +133,7 @@ class NucleiScanThread(QThread):
         except Exception as e:
             err = traceback.format_exc()
             log_debug(f"run() 异常: {e}\n{err}")
-            self.log_signal.emit(f"[ERROR] 线程异常: {e}")
+            self.log_signal.emit(tr("nuclei.thread_error", error=e))
             self.finished_signal.emit()
 
     def run_native_mode(self):
@@ -150,32 +146,108 @@ class NucleiScanThread(QThread):
             self._is_running = False
             if self.process:
                 try:
+                    self._resume_process_if_needed()
                     self.process.terminate()
                 except OSError:
                     pass
+            self._is_paused = False
             self._pause_event.set()
 
     def pause(self):
         log_debug("pause() 被调用")
+        process = None
         with self._lock:
             if self._is_running and not self._is_paused:
                 self._is_paused = True
                 self._pause_event.clear()
-                return True
-        return False
+                process = self.process
+            else:
+                return False
+
+        if process and process.poll() is None and not self._set_process_suspended(process, True):
+            with self._lock:
+                self._is_paused = False
+                self._pause_event.set()
+            return False
+        return True
     
     def resume(self):
         log_debug("resume() 被调用")
+        process = None
         with self._lock:
             if self._is_running and self._is_paused:
-                self._is_paused = False
-                self._pause_event.set()
-                return True
-        return False
+                process = self.process
+            else:
+                return False
+
+        if process and process.poll() is None and not self._set_process_suspended(process, False):
+            return False
+
+        with self._lock:
+            self._is_paused = False
+            self._pause_event.set()
+        return True
     
     def is_paused(self):
         with self._lock:
             return self._is_paused
+
+    def _resume_process_if_needed(self):
+        """Resume the child process before terminating or cleaning up."""
+        if self._is_paused and self.process and self.process.poll() is None:
+            self._set_process_suspended(self.process, False)
+
+    def _set_process_suspended(self, process, suspend):
+        """Suspend or resume the nuclei subprocess."""
+        if not process or process.poll() is not None:
+            return True
+
+        action = "suspend" if suspend else "resume"
+        try:
+            if os.name == "nt":
+                return self._set_windows_process_suspended(process.pid, suspend)
+
+            sig = signal.SIGSTOP if suspend else signal.SIGCONT
+            os.kill(process.pid, sig)
+            log_debug(f"Process {action} signal sent: pid={process.pid}")
+            return True
+        except Exception as exc:
+            log_debug(f"Process {action} failed: pid={getattr(process, 'pid', None)}, error={exc}")
+            return False
+
+    def _set_windows_process_suspended(self, pid, suspend):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            process_suspend_resume = 0x0800
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+
+            handle = kernel32.OpenProcess(process_suspend_resume, False, pid)
+            if not handle:
+                log_debug(f"OpenProcess failed: pid={pid}, error={ctypes.get_last_error()}")
+                return False
+
+            try:
+                func = ntdll.NtSuspendProcess if suspend else ntdll.NtResumeProcess
+                func.argtypes = [wintypes.HANDLE]
+                func.restype = wintypes.LONG
+                status = func(handle)
+                if status != 0:
+                    log_debug(f"{func.__name__} failed: pid={pid}, status={status}")
+                    return False
+                return True
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception as exc:
+            log_debug(f"Windows process suspend/resume failed: pid={pid}, suspend={suspend}, error={exc}")
+            return False
 
     def run_batch_mode(self):
         log_debug("run_batch_mode 开始")
@@ -194,15 +266,33 @@ class NucleiScanThread(QThread):
         
         log_debug(f"使用 Nuclei 路径: {nuclei_cmd}")
         log_debug(f"当前操作系统: {platform.system()}")
-        log_debug(f"目标数量: {len(targets)}, 模板数量: {len(self.templates)}")
+        templates = self.templates
+        oast_plan = None
+        log_debug(f"目标数量: {len(targets)}, 模板数量: {len(templates)}")
 
         # 检查模板是否为空
-        if not self.templates:
-            self.log_signal.emit("[WARNING] 没有指定 POC 模板，扫描将跳过")
+        if not templates:
+            self.log_signal.emit("[WARNING] " + tr("nuclei.no_templates_warning"))
             log_debug("WARNING: templates 列表为空!")
             return
 
         try:
+            oast_plan = prepare_oast_scan(templates, self.oast_config)
+            templates = oast_plan.templates
+            if oast_plan.disabled and (oast_plan.standard_count or oast_plan.legacy_count):
+                self.log_signal.emit("[INFO] " + tr("oast.disabled_for_templates", count=oast_plan.standard_count + oast_plan.legacy_count))
+            elif oast_plan.enabled:
+                self.log_signal.emit("[INFO] " + tr(
+                    "oast.enabled",
+                    count=oast_plan.standard_count + oast_plan.legacy_count,
+                    adapted=oast_plan.adapted_count,
+                ))
+            if oast_plan.adapted_count:
+                self.log_signal.emit("[INFO] " + tr("oast.temp_templates", count=oast_plan.adapted_count))
+            for warning in oast_plan.warnings:
+                if warning == "legacy_placeholders_not_adapted":
+                    self.log_signal.emit("[WARNING] " + tr("oast.legacy_not_adapted"))
+
             cmd = [nuclei_cmd]
             
             tmp_target_path = None
@@ -225,21 +315,23 @@ class NucleiScanThread(QThread):
 
             # POC 处理 - 使用临时文件避免命令行长度限制
             tmp_template_path = None
-            if len(self.templates) == 1:
+            if len(templates) == 1:
                 # 单个模板直接用 -t 参数
-                cmd.extend(["-t", self.templates[0]])
+                cmd.extend(["-t", templates[0]])
             else:
                 # 多个模板写入临时文件，使用 -t 指向文件
                 # 注意：nuclei 支持 -t 参数指向包含模板路径列表的文件
                 with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt', encoding='utf-8') as tmp_template:
                     tmp_template_path = tmp_template.name
-                    for t in self.templates:
+                    for t in templates:
                         tmp_template.write(t + '\n')
-                log_debug(f"模板列表写入临时文件: {tmp_template_path}, 共 {len(self.templates)} 个模板")
+                log_debug(f"模板列表写入临时文件: {tmp_template_path}, 共 {len(templates)} 个模板")
                 cmd.extend(["-t", tmp_template_path])
 
             if self.custom_args:
                 cmd.extend(self.custom_args)
+            if oast_plan and oast_plan.args:
+                cmd.extend(oast_plan.args)
             
             log_debug(f"启动 subprocess: {' '.join(cmd)}")
             
@@ -269,6 +361,8 @@ class NucleiScanThread(QThread):
             )
             
             log_debug(f"Subprocess PID: {self.process.pid}")
+            if self.is_paused():
+                self._set_process_suspended(self.process, True)
             
             for line in iter(self.process.stdout.readline, ''):
                 if not self._is_running:
@@ -294,7 +388,7 @@ class NucleiScanThread(QThread):
 
                             # 只有当进度大于0时才发送，避免重置进度条
                             if percent > 0:
-                                self.progress_signal.emit(percent, 100, f"扫描进度")
+                                self.progress_signal.emit(percent, 100, tr("nuclei.scan_progress"))
                     except json.JSONDecodeError:
                         # 非 JSON 输出
                         self.log_signal.emit(line)
@@ -318,3 +412,4 @@ class NucleiScanThread(QThread):
                     os.remove(tmp_template_path)
                 except OSError:
                     pass
+            cleanup_oast_plan(oast_plan)

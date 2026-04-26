@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from i18n import tr
+
 
 class POCStatsManager:
     """POC 使用统计管理器"""
@@ -96,7 +98,7 @@ class POCStatsManager:
             
             conn.commit()
         except Exception as e:
-            print(f"记录 POC 使用统计失败: {e}")
+            print(f"[!] {tr('poc.record_stats_failed', error=str(e))}")
         finally:
             conn.close()
     

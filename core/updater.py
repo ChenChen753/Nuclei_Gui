@@ -12,10 +12,12 @@ import tempfile
 import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
+from i18n import tr
+
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.4.2"
+CURRENT_VERSION = "2.5.0"
 
 # 更新时需要保留的文件/目录（不会被覆盖）
 PRESERVE_FILES = [
@@ -128,7 +130,7 @@ class UpdateCheckThread(QThread):
             if response.status_code == 200:
                 data = response.json()
                 latest_version = data.get('tag_name', '').lstrip('v')
-                release_notes = data.get('body', '无更新说明')
+                release_notes = data.get('body', tr("update.no_release_notes"))
 
                 # 查找下载链接 (zip 源码包)
                 download_url = ""
@@ -150,18 +152,18 @@ class UpdateCheckThread(QThread):
 
                 self.check_finished.emit(has_update, latest_version, download_url, release_notes)
             elif response.status_code == 404:
-                self.error_signal.emit("未找到发布版本")
+                self.error_signal.emit(tr("update.no_release_found"))
             elif response.status_code == 403:
-                self.error_signal.emit("API 请求限制，请稍后再试")
+                self.error_signal.emit(tr("update.api_rate_limited"))
             else:
-                self.error_signal.emit(f"请求失败: HTTP {response.status_code}")
+                self.error_signal.emit(tr("update.request_failed_http", code=response.status_code))
 
         except requests.exceptions.Timeout:
-            self.error_signal.emit("检查更新超时，请检查网络连接")
+            self.error_signal.emit(tr("update.check_timeout"))
         except requests.exceptions.ConnectionError:
-            self.error_signal.emit("网络连接失败，请检查网络设置")
+            self.error_signal.emit(tr("update.connection_failed"))
         except Exception as e:
-            self.error_signal.emit(f"检查更新失败: {str(e)}")
+            self.error_signal.emit(tr("update.check_failed", error=str(e)))
 
 
 class UpdateDownloadThread(QThread):
@@ -185,21 +187,21 @@ class UpdateDownloadThread(QThread):
         try:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-            self.progress_signal.emit(5, "正在准备下载...")
+            self.progress_signal.emit(5, tr("update.preparing_download"))
 
             # 创建临时目录
             temp_dir = tempfile.mkdtemp(prefix="nuclei_gui_update_")
             temp_zip = os.path.join(temp_dir, "update.zip")
 
             # 下载文件
-            self.progress_signal.emit(10, "正在下载更新包...")
+            self.progress_signal.emit(10, tr("update.downloading"))
 
             headers = {'User-Agent': 'Nuclei-GUI-Updater'}
             proxies = get_system_proxies()
             response = requests.get(self.download_url, headers=headers, stream=True, timeout=60, proxies=proxies)
 
             if response.status_code != 200:
-                self.finished_signal.emit(False, f"下载失败: HTTP {response.status_code}")
+                self.finished_signal.emit(False, tr("update.download_failed_http", code=response.status_code))
                 return
 
             # 获取文件大小
@@ -209,7 +211,7 @@ class UpdateDownloadThread(QThread):
             with open(temp_zip, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if self._is_cancelled:
-                        self.finished_signal.emit(False, "更新已取消")
+                        self.finished_signal.emit(False, tr("update.cancelled"))
                         return
 
                     if chunk:
@@ -218,9 +220,9 @@ class UpdateDownloadThread(QThread):
 
                         if total_size > 0:
                             percent = int(10 + (downloaded / total_size) * 50)
-                            self.progress_signal.emit(percent, f"正在下载... {downloaded // 1024} KB")
+                            self.progress_signal.emit(percent, tr("update.downloading_progress", size=downloaded // 1024))
 
-            self.progress_signal.emit(60, "正在解压更新包...")
+            self.progress_signal.emit(60, tr("update.extracting"))
 
             # 解压文件
             extract_dir = os.path.join(temp_dir, "extracted")
@@ -234,7 +236,7 @@ class UpdateDownloadThread(QThread):
             else:
                 source_dir = extract_dir
 
-            self.progress_signal.emit(70, "正在备份保留文件...")
+            self.progress_signal.emit(70, tr("update.backing_up"))
 
             # 备份需要保留的文件
             backup_dir = os.path.join(temp_dir, "backup")
@@ -253,12 +255,12 @@ class UpdateDownloadThread(QThread):
                     dst = os.path.join(backup_dir, dir_path)
                     shutil.copytree(src, dst, dirs_exist_ok=True)
 
-            self.progress_signal.emit(80, "正在更新文件...")
+            self.progress_signal.emit(80, tr("update.updating_files"))
 
             # 复制新文件（排除保留的文件和目录）
             for item in os.listdir(source_dir):
                 if self._is_cancelled:
-                    self.finished_signal.emit(False, "更新已取消")
+                    self.finished_signal.emit(False, tr("update.cancelled"))
                     return
 
                 src = os.path.join(source_dir, item)
@@ -289,7 +291,7 @@ class UpdateDownloadThread(QThread):
                 else:
                     shutil.copy2(src, dst)
 
-            self.progress_signal.emit(90, "正在恢复保留文件...")
+            self.progress_signal.emit(90, tr("update.restoring_files"))
 
             # 恢复保留的文件
             for file in PRESERVE_FILES:
@@ -305,11 +307,11 @@ class UpdateDownloadThread(QThread):
                     dst = os.path.join(project_root, dir_path)
                     shutil.copytree(src, dst, dirs_exist_ok=True)
 
-            self.progress_signal.emit(100, "更新完成！")
-            self.finished_signal.emit(True, f"更新到 v{self.version} 成功！请重启程序以应用更新。")
+            self.progress_signal.emit(100, tr("update.complete"))
+            self.finished_signal.emit(True, tr("update.success", version=self.version))
 
         except Exception as e:
-            self.finished_signal.emit(False, f"更新失败: {str(e)}")
+            self.finished_signal.emit(False, tr("update.failed", error=str(e)))
 
         finally:
             # 清理临时文件

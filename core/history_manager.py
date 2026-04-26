@@ -117,6 +117,7 @@ class HistoryManager:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM fofa_history')
             conn.commit()
+            cursor.execute('VACUUM')
 
     # ========== AI 历史 ==========
     def add_ai_history(self, task_type: str, input_text: str, output_text: str, model_name: str = "") -> int:
@@ -169,6 +170,7 @@ class HistoryManager:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM ai_history')
             conn.commit()
+            cursor.execute('VACUUM')
 
     # ========== 扫描历史 ==========
     def init_scan_history(self):
@@ -248,6 +250,7 @@ class HistoryManager:
             try:
                 cursor.execute('DELETE FROM scan_history')
                 conn.commit()
+                cursor.execute('VACUUM')
             except sqlite3.Error:
                 pass
 

@@ -12,7 +12,9 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QScrollArea, QWidget, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
+from core.ui_scale import scaled, scaled_style
 from core.fortress_style import FORTRESS_COLORS, get_dialog_stylesheet, get_button_style, get_secondary_button_style
+from i18n import tr
 
 
 class StepWidget(QFrame):
@@ -41,7 +43,7 @@ class StepWidget(QFrame):
         else:
              bg_color = 'white'
 
-        self.setStyleSheet(f"""
+        self.setStyleSheet(scaled_style(f"""
             StepWidget {{
                 background-color: {bg_color};
                 background-color: {bg_color};
@@ -52,35 +54,35 @@ class StepWidget(QFrame):
             StepWidget:hover {{
                 border-color: {self.colors.get('btn_primary', '#2563eb')};
             }}
-        """)
+        """))
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(scaled(12), scaled(10), scaled(12), scaled(10))
+        layout.setSpacing(scaled(8))
         
         # 头部：步骤标题 + 折叠/删除按钮
         header = QHBoxLayout()
         
-        self.step_label = QLabel(f"步骤 {self.step_number}")
-        self.step_label.setStyleSheet(f"""
-            font-weight: bold; 
+        self.step_label = QLabel(tr("poc.step_number", number=self.step_number))
+        self.step_label.setStyleSheet(scaled_style(f"""
+            font-weight: bold;
             font-size: 14px;
             color: {self.colors.get('text_primary', '#1f2937')};
-        """)
+        """))
         header.addWidget(self.step_label)
         
         header.addStretch()
         
         # 折叠按钮
         self.toggle_btn = QPushButton("▼")
-        self.toggle_btn.setFixedSize(28, 28)
+        self.toggle_btn.setFixedSize(scaled(28), scaled(28))
         self.toggle_btn.setCursor(Qt.PointingHandCursor)
         
         nav_hover = self.colors.get('nav_hover', '#f3f4f6')
         nav_border = self.colors.get('nav_border', '#e5e7eb')
         text_secondary = self.colors.get('text_secondary', '#6b7280')
         
-        self.toggle_btn.setStyleSheet(f"""
+        self.toggle_btn.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background: {nav_hover};
                 border: 1px solid {nav_border};
@@ -91,13 +93,13 @@ class StepWidget(QFrame):
             QPushButton:hover {{
                 background-color: {nav_border};
             }}
-        """)
+        """))
         self.toggle_btn.clicked.connect(self.toggle_expand)
         header.addWidget(self.toggle_btn)
         
         # 删除按钮
         self.delete_btn = QPushButton("✕")
-        self.delete_btn.setFixedSize(28, 28)
+        self.delete_btn.setFixedSize(scaled(28), scaled(28))
         self.delete_btn.setCursor(Qt.PointingHandCursor)
         
         btn_danger = self.colors.get('btn_danger', '#ef4444')
@@ -105,7 +107,7 @@ class StepWidget(QFrame):
         if self.colors.get('is_dark', False):
              bg_color = 'transparent'
              
-        self.delete_btn.setStyleSheet(f"""
+        self.delete_btn.setStyleSheet(scaled_style(f"""
             QPushButton {{
                 background: {bg_color};
                 border: 1px solid {btn_danger};
@@ -117,7 +119,7 @@ class StepWidget(QFrame):
                 background-color: {btn_danger};
                 color: white;
             }}
-        """)
+        """))
         self.delete_btn.clicked.connect(lambda: self.delete_requested.emit(self))
         header.addWidget(self.delete_btn)
         
@@ -126,13 +128,13 @@ class StepWidget(QFrame):
         # 内容区（可折叠）
         self.content_widget = QWidget()
         content_layout = QVBoxLayout(self.content_widget)
-        content_layout.setContentsMargins(0, 5, 0, 0)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(0, scaled(5), 0, 0)
+        content_layout.setSpacing(scaled(8))
         
         # 请求包输入
-        req_label = QLabel("请求包:")
+        req_label = QLabel(tr("poc.request_packet"))
         text_secondary = self.colors.get('text_secondary', '#6b7280')
-        req_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
+        req_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
         content_layout.addWidget(req_label)
         
         self.request_input = QPlainTextEdit()
@@ -142,13 +144,13 @@ User-Agent: Mozilla/5.0
 Cookie: session=xxx
 
 {"param": "value"}""")
-        self.request_input.setFont(QFont("Consolas", 10))
-        self.request_input.setMaximumHeight(100)
+        self.request_input.setFont(QFont("Consolas", scaled(10)))
+        self.request_input.setMaximumHeight(scaled(100))
         content_layout.addWidget(self.request_input)
         
         # 响应包输入
-        resp_label = QLabel("响应包（用于分析匹配规则）:")
-        resp_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
+        resp_label = QLabel(tr("poc.response_packet"))
+        resp_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
         content_layout.addWidget(resp_label)
         
         self.response_input = QPlainTextEdit()
@@ -156,45 +158,45 @@ Cookie: session=xxx
 Content-Type: application/json
 
 {"success":true,"data":{...}}""")
-        self.response_input.setFont(QFont("Consolas", 10))
-        self.response_input.setMaximumHeight(80)
+        self.response_input.setFont(QFont("Consolas", scaled(10)))
+        self.response_input.setMaximumHeight(scaled(80))
         content_layout.addWidget(self.response_input)
         
         # 响应判断规则 - 分开的输入框
         rule_layout = QVBoxLayout()
-        rule_layout.setSpacing(5)
+        rule_layout.setSpacing(scaled(5))
         
         # 关键词匹配
         keywords_row = QHBoxLayout()
-        keywords_label = QLabel("关键词:")
-        keywords_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
-        keywords_label.setFixedWidth(60)
+        keywords_label = QLabel(tr("poc.keywords"))
+        keywords_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
+        keywords_label.setFixedWidth(scaled(60))
         keywords_row.addWidget(keywords_label)
         self.keywords_input = QLineEdit()
-        self.keywords_input.setPlaceholderText("匹配关键词，多个用逗号分隔，如: success, token")
+        self.keywords_input.setPlaceholderText(tr("poc.keywords_placeholder"))
         keywords_row.addWidget(self.keywords_input)
         rule_layout.addLayout(keywords_row)
         
         # 状态码 + 正则（同一行）
         status_regex_row = QHBoxLayout()
         
-        status_label = QLabel("状态码:")
-        status_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
-        status_label.setFixedWidth(60)
+        status_label = QLabel(tr("poc.status_code"))
+        status_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
+        status_label.setFixedWidth(scaled(60))
         status_regex_row.addWidget(status_label)
         self.status_input = QLineEdit()
-        self.status_input.setPlaceholderText("如: 200")
-        self.status_input.setMaximumWidth(100)
+        self.status_input.setPlaceholderText(tr("poc.status_code_placeholder"))
+        self.status_input.setMaximumWidth(scaled(100))
         status_regex_row.addWidget(self.status_input)
         
         status_regex_row.addSpacing(20)
         
-        regex_label = QLabel("正则:")
-        regex_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
-        regex_label.setFixedWidth(40)
+        regex_label = QLabel(tr("poc.regex"))
+        regex_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
+        regex_label.setFixedWidth(scaled(40))
         status_regex_row.addWidget(regex_label)
         self.regex_input = QLineEdit()
-        self.regex_input.setPlaceholderText("正则表达式，如: root:.*:0:0（留空表示不使用）")
+        self.regex_input.setPlaceholderText(tr("poc.regex_placeholder"))
         status_regex_row.addWidget(self.regex_input)
         
         rule_layout.addLayout(status_regex_row)
@@ -223,7 +225,7 @@ Content-Type: application/json
     def update_step_number(self, number: int):
         """更新步骤序号"""
         self.step_number = number
-        self.step_label.setText(f"步骤 {number}")
+        self.step_label.setText(tr("poc.step_number", number=number))
     
     def get_request_text(self) -> str:
         return self.request_input.toPlainText().strip()
@@ -274,8 +276,8 @@ class POCGeneratorDialog(QDialog):
     
     def __init__(self, parent=None, colors=None):
         super().__init__(parent)
-        self.setWindowTitle("POC 生成器")
-        self.resize(1000, 750)
+        self.setWindowTitle(tr("poc.generator_title"))
+        self.resize(scaled(1000), scaled(750))
         self.colors = colors if colors else {}
         self.step_widgets = []  # 存储所有步骤组件
         # 重新定义输入框背景色 (Standard Gray)
@@ -283,7 +285,7 @@ class POCGeneratorDialog(QDialog):
         if self.colors.get('is_dark', False):
             input_bg = self.colors.get('table_header', '#334155') # Standard Gray
             
-        self.setStyleSheet(get_dialog_stylesheet(self.colors) + f"""
+        self.setStyleSheet(get_dialog_stylesheet(self.colors) + scaled_style(f"""
             QGroupBox {{
                 border: 1px solid {self.colors.get('nav_border', '#e5e7eb')};
             }}
@@ -294,22 +296,22 @@ class POCGeneratorDialog(QDialog):
                 background-color: {input_bg};
                 border: 1px solid {self.colors.get('nav_border', '#334155')};
             }}
-        """)
+        """))
         self.init_ui()
     
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        
+        layout.setSpacing(scaled(10))
+
         # 标题
-        title = QLabel("POC 生成器（支持多步骤）")
+        title = QLabel(tr("poc.title_label"))
         btn_primary = self.colors.get('btn_primary', '#2563eb')
-        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {btn_primary};")
+        title.setStyleSheet(scaled_style(f"font-size: 18px; font-weight: bold; color: {btn_primary};"))
         layout.addWidget(title)
         
-        subtitle = QLabel("根据请求包自动生成 Nuclei POC 模板，支持多步骤漏洞利用")
+        subtitle = QLabel(tr("poc.subtitle"))
         text_secondary = self.colors.get('text_secondary', '#6b7280')
-        subtitle.setStyleSheet(f"color: {text_secondary}; margin-bottom: 10px;")
+        subtitle.setStyleSheet(scaled_style(f"color: {text_secondary}; margin-bottom: 10px;"))
         layout.addWidget(subtitle)
         
         # 主内容区
@@ -318,47 +320,47 @@ class POCGeneratorDialog(QDialog):
         # ===== 左侧：输入区域 =====
         left_panel = QFrame()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 10, 0)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(0, 0, scaled(10), 0)
+        left_layout.setSpacing(scaled(10))
         
         # 基本信息表单（紧凑布局）
-        form_group = QGroupBox("基本信息")
+        form_group = QGroupBox(tr("poc.basic_info"))
         form_layout = QVBoxLayout()
-        form_layout.setSpacing(8)
+        form_layout.setSpacing(scaled(8))
         
         # 第一行：漏洞名称
         row1 = QHBoxLayout()
-        lbl1 = QLabel("漏洞名称:")
-        lbl1.setFixedWidth(70)
+        lbl1 = QLabel(tr("poc.vuln_name_label"))
+        lbl1.setFixedWidth(scaled(70))
         row1.addWidget(lbl1)
         self.vuln_name_input = QLineEdit()
-        self.vuln_name_input.setPlaceholderText("例如：某某系统-接口名-SQL注入漏洞")
+        self.vuln_name_input.setPlaceholderText(tr("poc.vuln_name_placeholder"))
         row1.addWidget(self.vuln_name_input)
         form_layout.addLayout(row1)
         
         # 第二行：严重程度 + FOFA语句
         row2 = QHBoxLayout()
-        lbl2 = QLabel("严重程度:")
-        lbl2.setFixedWidth(70)
+        lbl2 = QLabel(tr("poc.severity_label"))
+        lbl2.setFixedWidth(scaled(70))
         row2.addWidget(lbl2)
         self.severity_combo = QComboBox()
         self.severity_combo.addItems(["high", "critical", "medium", "low", "info"])
-        self.severity_combo.setFixedWidth(100)
+        self.severity_combo.setFixedWidth(scaled(100))
         row2.addWidget(self.severity_combo)
         row2.addSpacing(10)
-        row2.addWidget(QLabel("FOFA语句:"))
+        row2.addWidget(QLabel(tr("poc.fofa_query_label")))
         self.fofa_input = QLineEdit()
-        self.fofa_input.setPlaceholderText("例如：body=\"xxx\" || title=\"xxx\"")
+        self.fofa_input.setPlaceholderText(tr("poc.fofa_query_placeholder"))
         row2.addWidget(self.fofa_input)
         form_layout.addLayout(row2)
         
         # 第三行：漏洞描述
         row3 = QHBoxLayout()
-        lbl3 = QLabel("漏洞描述:")
-        lbl3.setFixedWidth(70)
+        lbl3 = QLabel(tr("poc.vuln_desc_label"))
+        lbl3.setFixedWidth(scaled(70))
         row3.addWidget(lbl3)
         self.desc_input = QLineEdit()
-        self.desc_input.setPlaceholderText("漏洞危害描述（可选）")
+        self.desc_input.setPlaceholderText(tr("poc.vuln_desc_placeholder"))
         row3.addWidget(self.desc_input)
         form_layout.addLayout(row3)
         
@@ -366,18 +368,18 @@ class POCGeneratorDialog(QDialog):
         left_layout.addWidget(form_group)
         
         # ===== 步骤编辑区 =====
-        steps_group = QGroupBox("请求步骤")
+        steps_group = QGroupBox(tr("poc.request_steps"))
         steps_layout = QVBoxLayout()
-        steps_layout.setSpacing(8)
+        steps_layout.setSpacing(scaled(8))
         
         # 步骤标题行
         steps_header = QHBoxLayout()
-        hint_label = QLabel("支持添加多个请求步骤以构建多步骤漏洞POC")
-        hint_label.setStyleSheet(f"color: {text_secondary}; font-size: 11px;")
+        hint_label = QLabel(tr("poc.multi_step_hint"))
+        hint_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 11px;"))
         steps_header.addWidget(hint_label)
         steps_header.addStretch()
         
-        self.add_step_btn = QPushButton("添加步骤")
+        self.add_step_btn = QPushButton(tr("poc.add_step"))
         self.add_step_btn.setCursor(Qt.PointingHandCursor)
         self.add_step_btn.setStyleSheet(get_button_style("info", self.colors))
         self.add_step_btn.clicked.connect(self.add_step)
@@ -390,19 +392,19 @@ class POCGeneratorDialog(QDialog):
         nav_border = self.colors.get('nav_border', '#e5e7eb')
         content_bg = self.colors.get('content_bg', '#f8fafc')
         
-        self.steps_scroll.setStyleSheet(f"""
+        self.steps_scroll.setStyleSheet(scaled_style(f"""
             QScrollArea {{
                 border: 1px solid {nav_border};
                 border-radius: 6px;
                 background: {content_bg};
             }}
-        """)
+        """))
         
         self.steps_container = QWidget()
-        self.steps_container.setStyleSheet(f"background: {content_bg};")
+        self.steps_container.setStyleSheet(scaled_style(f"background: {content_bg};"))
         self.steps_container_layout = QVBoxLayout(self.steps_container)
-        self.steps_container_layout.setContentsMargins(5, 5, 5, 5)
-        self.steps_container_layout.setSpacing(8)
+        self.steps_container_layout.setContentsMargins(scaled(5), scaled(5), scaled(5), scaled(5))
+        self.steps_container_layout.setSpacing(scaled(8))
         self.steps_container_layout.addStretch()
         
         self.steps_scroll.setWidget(self.steps_container)
@@ -410,30 +412,30 @@ class POCGeneratorDialog(QDialog):
         
         # AI提示行（全局）
         ai_hint_row = QHBoxLayout()
-        ai_hint_label = QLabel("AI提示:")
-        ai_hint_label.setStyleSheet(f"color: {text_secondary}; font-size: 12px;")
-        ai_hint_label.setFixedWidth(50)
+        ai_hint_label = QLabel(tr("poc.ai_hint_label"))
+        ai_hint_label.setStyleSheet(scaled_style(f"color: {text_secondary}; font-size: 12px;"))
+        ai_hint_label.setFixedWidth(scaled(50))
         ai_hint_row.addWidget(ai_hint_label)
         
         self.global_ai_hint = QLineEdit()
-        self.global_ai_hint.setPlaceholderText("可选：补充漏洞信息给AI，如漏洞类型、CVE编号、产品名等")
+        self.global_ai_hint.setPlaceholderText(tr("poc.ai_hint_placeholder"))
         ai_hint_row.addWidget(self.global_ai_hint)
         steps_layout.addLayout(ai_hint_row)
         
         # 分析按钮行
         analyze_row = QHBoxLayout()
         
-        btn_auto_analyze = QPushButton("自动分析")
+        btn_auto_analyze = QPushButton(tr("poc.auto_analyze"))
         btn_auto_analyze.setCursor(Qt.PointingHandCursor)
         btn_auto_analyze.setStyleSheet(get_button_style("success", self.colors))
-        btn_auto_analyze.setToolTip("使用规则自动提取所有步骤响应中的特征关键词")
+        btn_auto_analyze.setToolTip(tr("poc.auto_analyze_tooltip"))
         btn_auto_analyze.clicked.connect(self.auto_analyze_response)
         analyze_row.addWidget(btn_auto_analyze)
         
-        btn_ai_analyze = QPushButton("AI 分析")
+        btn_ai_analyze = QPushButton(tr("poc.ai_analyze"))
         btn_ai_analyze.setCursor(Qt.PointingHandCursor)
         btn_ai_analyze.setStyleSheet(get_button_style("warning", self.colors))
-        btn_ai_analyze.setToolTip("使用 AI 智能分析所有步骤的响应并生成匹配规则建议")
+        btn_ai_analyze.setToolTip(tr("poc.ai_analyze_tooltip"))
         btn_ai_analyze.clicked.connect(self.ai_analyze_response)
         analyze_row.addWidget(btn_ai_analyze)
         
@@ -448,14 +450,14 @@ class POCGeneratorDialog(QDialog):
         # ===== 右侧：预览区域 =====
         right_panel = QFrame()
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(10, 0, 0, 0)
+        right_layout.setContentsMargins(scaled(10), 0, 0, 0)
         
-        preview_group = QGroupBox("POC 预览")
+        preview_group = QGroupBox(tr("poc.preview_group"))
         preview_layout = QVBoxLayout()
         
         self.preview_output = QPlainTextEdit()
         self.preview_output.setReadOnly(True)
-        self.preview_output.setFont(QFont("Consolas", 10))
+        self.preview_output.setFont(QFont("Consolas", scaled(10)))
         
         # 预览区域样式 - 确保深浅色模式都有良好的对比度
         if self.colors.get('is_dark', False):
@@ -467,28 +469,28 @@ class POCGeneratorDialog(QDialog):
             preview_bg = '#1e1e2e'
             preview_text = '#cdd6f4'
         
-        self.preview_output.setStyleSheet(f"""
+        self.preview_output.setStyleSheet(scaled_style(f"""
             QPlainTextEdit {{
                 background-color: {preview_bg};
                 color: {preview_text};
                 border: 1px solid {nav_border};
                 border-radius: 4px;
             }}
-        """)
+        """))
         preview_layout.addWidget(self.preview_output)
         
         preview_group.setLayout(preview_layout)
         right_layout.addWidget(preview_group)
         
         splitter.addWidget(right_panel)
-        splitter.setSizes([550, 450])
+        splitter.setSizes([scaled(550), scaled(450)])
         
         layout.addWidget(splitter, 1)
         
         # ===== 按钮区域 =====
         btn_row = QHBoxLayout()
         
-        btn_preview = QPushButton("生成预览")
+        btn_preview = QPushButton(tr("poc.generate_preview"))
         btn_preview.setCursor(Qt.PointingHandCursor)
         btn_preview.setStyleSheet(get_button_style("info", self.colors))
         btn_preview.clicked.connect(self.generate_preview)
@@ -496,13 +498,13 @@ class POCGeneratorDialog(QDialog):
         
         btn_row.addStretch()
         
-        btn_save = QPushButton("保存 POC")
+        btn_save = QPushButton(tr("poc.save_poc"))
         btn_save.setCursor(Qt.PointingHandCursor)
         btn_save.setStyleSheet(get_button_style("success", self.colors))
         btn_save.clicked.connect(self.save_poc)
         btn_row.addWidget(btn_save)
         
-        btn_cancel = QPushButton("取消")
+        btn_cancel = QPushButton(tr("common.cancel"))
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.setStyleSheet(get_secondary_button_style(self.colors))
         btn_cancel.clicked.connect(self.reject)
@@ -516,7 +518,7 @@ class POCGeneratorDialog(QDialog):
     def add_step(self):
         """添加新步骤"""
         if len(self.step_widgets) >= self.MAX_STEPS:
-            QMessageBox.warning(self, "提示", f"最多支持 {self.MAX_STEPS} 个步骤")
+            QMessageBox.warning(self, tr("msg.hint"), tr("poc.max_steps_reached", max=self.MAX_STEPS))
             return
         
         step_num = len(self.step_widgets) + 1
@@ -540,7 +542,7 @@ class POCGeneratorDialog(QDialog):
     def delete_step(self, step_widget: StepWidget):
         """删除步骤"""
         if len(self.step_widgets) <= 1:
-            QMessageBox.warning(self, "提示", "至少需要保留一个步骤")
+            QMessageBox.warning(self, tr("msg.hint"), tr("poc.min_one_step"))
             return
         
         self.step_widgets.remove(step_widget)
@@ -602,7 +604,7 @@ class POCGeneratorDialog(QDialog):
         """生成多步骤 POC 内容"""
         vuln_name = self.vuln_name_input.text().strip()
         if not vuln_name:
-            return "# 错误：请输入漏洞名称"
+            return tr("poc.error_no_vuln_name")
         
         # 收集所有步骤的请求
         raw_requests = []
@@ -615,7 +617,7 @@ class POCGeneratorDialog(QDialog):
                 last_valid_step_widget = sw
         
         if not raw_requests:
-            return "# 错误：请至少在一个步骤中输入请求包"
+            return tr("poc.error_no_request")
         
         # 生成 POC ID - 必须只包含英文、数字、短横线、下划线
         # nuclei 要求 id 匹配: ^([a-zA-Z0-9]+[-_])*[a-zA-Z0-9]+$
@@ -632,7 +634,7 @@ class POCGeneratorDialog(QDialog):
         
         severity = self.severity_combo.currentText()
         fofa = self.fofa_input.text().strip()
-        desc = self.desc_input.text().strip() or "该漏洞可能导致敏感信息泄露或系统被攻击。"
+        desc = self.desc_input.text().strip() or tr("poc.default_vuln_desc")
         
         # 从最后一个步骤的组件直接获取匹配条件
         match_words = ""
@@ -693,7 +695,7 @@ class POCGeneratorDialog(QDialog):
             # 单步骤：使用传统 path 格式
             parsed = self.parse_request(raw_requests[0])
             if not parsed:
-                return "# 错误：请求包格式不正确"
+                return tr("poc.error_bad_request_format")
             
             headers_yaml = ""
             for header in parsed['headers']:
@@ -821,17 +823,17 @@ http:
         """保存 POC 文件"""
         vuln_name = self.vuln_name_input.text().strip()
         if not vuln_name:
-            QMessageBox.warning(self, "错误", "请输入漏洞名称")
+            QMessageBox.warning(self, tr("msg.error"), tr("poc.please_input_vuln_name"))
             return
-        
+
         has_request = any(sw.get_request_text() for sw in self.step_widgets)
         if not has_request:
-            QMessageBox.warning(self, "错误", "请至少在一个步骤中输入请求包")
+            QMessageBox.warning(self, tr("msg.error"), tr("poc.please_input_request"))
             return
         
         content = self.generate_poc_content()
-        if content.startswith("# 错误"):
-            QMessageBox.warning(self, "错误", content.replace("# 错误：", ""))
+        if not content.lstrip().startswith("id:"):
+            QMessageBox.warning(self, tr("msg.error"), content)
             return
         
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -847,8 +849,8 @@ http:
         
         if os.path.exists(file_path):
             reply = QMessageBox.question(
-                self, "文件已存在",
-                f"文件 {filename} 已存在，是否覆盖？",
+                self, tr("msg.file_exists"),
+                tr("poc.file_exists_overwrite", filename=filename),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -860,12 +862,12 @@ http:
                 f.write(content)
             
             QMessageBox.information(
-                self, "保存成功",
-                f"POC 已保存到：\n{file_path}\n\n请刷新 POC 库以加载新 POC。"
+                self, tr("msg.save_success"),
+                tr("poc.poc_saved_to", filepath=file_path)
             )
             self.accept()
         except Exception as e:
-            QMessageBox.warning(self, "保存失败", f"保存文件时出错：\n{str(e)}")
+            QMessageBox.warning(self, tr("msg.save_failed"), tr("poc.save_error", error=str(e)))
     
     def auto_analyze_response(self):
         """自动分析所有步骤的响应包"""
@@ -876,7 +878,7 @@ http:
                 all_responses.append(resp)
         
         if not all_responses:
-            QMessageBox.warning(self, "提示", "请先在任意步骤中粘贴响应包内容")
+            QMessageBox.warning(self, tr("msg.hint"), tr("poc.please_paste_response"))
             return
         
         response_text = all_responses[-1]
@@ -912,18 +914,18 @@ http:
         keywords_str = ", ".join(keywords)
         
         if not status_code and not keywords:
-            QMessageBox.information(self, "分析结果", "未能自动提取有效特征，请手动填写匹配规则。")
+            QMessageBox.information(self, tr("poc.analyze_result"), tr("poc.no_features_found"))
             return
         
-        msg = f"分析了 {len(all_responses)} 个响应包，结果如下：\n\n"
+        msg = tr("poc.analyzed_responses", count=len(all_responses)) + "\n\n"
         if status_code:
-            msg += f"• 状态码: {status_code}\n"
+            msg += tr("poc.result_status_code", code=status_code) + "\n"
         if keywords:
-            msg += f"• 关键词: {keywords_str}\n"
-        msg += "\n是否采纳？"
-        
+            msg += tr("poc.result_keywords", keywords=keywords_str) + "\n"
+        msg += "\n" + tr("poc.adopt_results_question")
+
         reply = QMessageBox.question(
-            self, "确认采纳分析结果",
+            self, tr("poc.confirm_adopt_results"),
             msg,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
@@ -955,10 +957,10 @@ http:
                 })
         
         if not steps_info:
-            QMessageBox.warning(self, "提示", "请先在任意步骤中填写请求包或响应包")
+            QMessageBox.warning(self, tr("msg.hint"), tr("poc.please_fill_request_or_response"))
             return
         
-        vuln_name = self.vuln_name_input.text().strip() or "未命名漏洞"
+        vuln_name = self.vuln_name_input.text().strip() or tr("poc.unnamed_vuln")
         global_hint = self.global_ai_hint.text().strip()  # 全局AI提示
         
         steps_text = ""
@@ -1019,7 +1021,7 @@ http:
             current_index = settings.get_current_ai_preset_index()
             
             if not presets or current_index < 0 or current_index >= len(presets):
-                QMessageBox.warning(self, "错误", "请先在设置中配置 AI 模型")
+                QMessageBox.warning(self, tr("msg.error"), tr("ai.please_config_ai_settings"))
                 return
             
             preset = presets[current_index]
@@ -1028,10 +1030,10 @@ http:
             model = preset.get("model", "")
             
             if not api_key:
-                QMessageBox.warning(self, "错误", "请先在设置中配置 AI API 密钥")
+                QMessageBox.warning(self, tr("msg.error"), tr("poc.please_config_ai_key"))
                 return
             
-            self.preview_output.setPlainText(f"正在调用 AI 分析 {len(steps_info)} 个步骤，请稍候...\n\n（正在后台处理）")
+            self.preview_output.setPlainText(tr("poc.ai_analyzing_steps", count=len(steps_info)))
             
             from PyQt5.QtCore import QThread
             
@@ -1062,7 +1064,7 @@ http:
             self.ai_thread.start()
             
         except Exception as e:
-            QMessageBox.warning(self, "AI 分析失败", f"准备调用 AI 时出错：\n{str(e)}")
+            QMessageBox.warning(self, tr("poc.ai_analyze_failed"), tr("poc.ai_prepare_error", error=str(e)))
     
     def closeEvent(self, event):
         """窗口关闭事件"""
@@ -1083,10 +1085,10 @@ http:
             return
         
         if not result:
-            QMessageBox.warning(self, "AI 分析失败", "未能获取 AI 响应，请检查 AI 配置。")
+            QMessageBox.warning(self, tr("poc.ai_analyze_failed"), tr("poc.ai_no_response"))
             return
         
-        self.preview_output.setPlainText(f"AI 分析结果：\n\n{result}")
+        self.preview_output.setPlainText(tr("poc.ai_analyze_result_label", result=result).replace("\\n", "\n"))
         
         # 解析每个步骤的判断规则
         step_rules = {}
@@ -1104,17 +1106,17 @@ http:
                     step_rules[step_num] = rule_text
         
         if not step_rules:
-            QMessageBox.information(self, "AI 分析完成", 
-                "AI 返回的结果格式不符合预期，已显示在预览区域，请手动填写判断规则。")
+            QMessageBox.information(self, tr("poc.ai_analyze_complete"),
+                tr("poc.ai_result_format_unexpected"))
             return
         
         # 构建确认消息，标注每个步骤
-        msg = "AI 分析结果如下，是否采纳？\n\n"
+        msg = tr("poc.ai_adopt_question") + "\n\n"
         for step_num, rule in sorted(step_rules.items()):
-            msg += f"【步骤 {step_num}】{rule}\n"
-        
+            msg += tr("poc.step_rule_line", step=step_num, rule=rule) + "\n"
+
         reply = QMessageBox.question(
-            self, "确认采纳 AI 分析结果",
+            self, tr("poc.confirm_adopt_ai_results"),
             msg,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
@@ -1157,5 +1159,5 @@ http:
         if not self.isVisible() or getattr(self, '_is_closing', False):
             return
         
-        self.preview_output.setPlainText(f"AI 分析失败：{error}")
-        QMessageBox.warning(self, "AI 分析失败", f"调用 AI 时出错：\n{error}")
+        self.preview_output.setPlainText(tr("poc.ai_analyze_failed_label", error=error))
+        QMessageBox.warning(self, tr("poc.ai_analyze_failed"), tr("poc.ai_call_error", error=error))

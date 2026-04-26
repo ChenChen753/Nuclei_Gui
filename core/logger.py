@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+from i18n import tr
+
 
 class LoggerManager:
     """
@@ -113,10 +115,10 @@ class LoggerManager:
         try:
             if self.log_file.exists():
                 with open(self.log_file, 'w', encoding='utf-8') as f:
-                    f.write("# 日志已清空 - " + datetime.now().isoformat() + "\n")
+                    f.write("# " + tr("log.log_cleared") + " - " + datetime.now().isoformat() + "\n")
             if self.error_log_file.exists():
                 with open(self.error_log_file, 'w', encoding='utf-8') as f:
-                    f.write("# 错误日志已清空 - " + datetime.now().isoformat() + "\n")
+                    f.write("# " + tr("log.error_log_cleared") + " - " + datetime.now().isoformat() + "\n")
             return True
         except Exception:
             return False
@@ -211,7 +213,7 @@ def log_operation(logger: logging.Logger, operation: str, success: bool, details
         success: 是否成功
         details: 详细信息
     """
-    status = "成功" if success else "失败"
+    status = tr("log.success") if success else tr("log.failure")
     level = logging.INFO if success else logging.WARNING
     message = "[" + operation + "] " + status
     if details:

@@ -35,7 +35,7 @@ class ScanHistory:
                     poc_count INTEGER,
                     vuln_count INTEGER,
                     duration_seconds REAL,
-                    status TEXT DEFAULT '扫描完成',
+                    status TEXT DEFAULT 'completed',
                     targets TEXT,
                     pocs TEXT,
                     config TEXT
@@ -46,7 +46,17 @@ class ScanHistory:
             cursor.execute("PRAGMA table_info(scan_records)")
             columns = [col[1] for col in cursor.fetchall()]
             if 'status' not in columns:
-                cursor.execute("ALTER TABLE scan_records ADD COLUMN status TEXT DEFAULT '扫描完成'")
+                cursor.execute("ALTER TABLE scan_records ADD COLUMN status TEXT DEFAULT 'completed'")
+
+            # 迁移旧版中文状态值到英文键
+            _status_migration = {
+                '扫描完成': 'completed',
+                '扫描失败': 'failed',
+                '用户停止': 'stopped',
+                '任务完成': 'completed',
+            }
+            for old_val, new_val in _status_migration.items():
+                cursor.execute("UPDATE scan_records SET status = ? WHERE status = ?", (new_val, old_val))
 
             # 检查是否需要添加 template_path 字段（兼容旧数据库）
             cursor.execute("PRAGMA table_info(vuln_results)")
@@ -73,7 +83,7 @@ class ScanHistory:
     
     def add_scan_record(self, target_count: int, poc_count: int, vuln_count: int,
                         duration: float, targets: list, pocs: list, config: dict,
-                        status: str = "扫描完成") -> int:
+                        status: str = "completed") -> int:
         """添加扫描记录，返回记录ID"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -251,6 +261,7 @@ class ScanHistory:
             cursor.execute('DELETE FROM scan_records')
 
             conn.commit()
+            cursor.execute('VACUUM')
 
 
 # 全局单例

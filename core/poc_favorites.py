@@ -4,6 +4,7 @@ POC 收藏/分组管理 - 支持自定义标签和分组
 import json
 from pathlib import Path
 from PyQt5.QtCore import QSettings
+from i18n import tr
 
 
 class POCFavorites:

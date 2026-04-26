@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from PyQt5.QtCore import QThread, pyqtSignal
+from i18n import tr
 
 
 @dataclass
@@ -70,7 +71,7 @@ class SearchEngineBase(ABC):
     # 引擎名称
     name: str = "BaseEngine"
     # 引擎显示名称
-    display_name: str = "基础引擎"
+    display_name: str = tr("search.base_engine")
     
     def __init__(self, api_key: str = "", api_url: str = "", **kwargs):
         """
@@ -164,7 +165,7 @@ class SearchEngineThread(QThread):
                 result = self.engine.search(self.query, current_page, self.page_size)
                 
                 if not result.get('success'):
-                    self.error_signal.emit(result.get('error', '搜索失败'))
+                    self.error_signal.emit(result.get('error', tr("search.search_failed")))
                     return
                 
                 total = result.get('total', 0)
@@ -177,7 +178,7 @@ class SearchEngineThread(QThread):
                     break
                     
             except Exception as e:
-                self.error_signal.emit(f"搜索出错: {str(e)}")
+                self.error_signal.emit(tr("search.search_error", error=str(e)))
                 return
         
         self.result_signal.emit({

@@ -11,6 +11,7 @@ from collections import deque
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 
 from core.logger import get_logger
+from i18n import tr
 
 logger = get_logger('perf_monitor')
 
@@ -117,14 +118,14 @@ class PerformanceMonitor(QObject):
     
     def _check_alerts(self, snapshot: PerformanceSnapshot):
         if snapshot.cpu_percent >= self._thresholds['cpu_critical']:
-            self.alert_triggered.emit('critical', f'CPU过高: {snapshot.cpu_percent}%')
+            self.alert_triggered.emit('critical', tr('perf.cpu_critical', value=snapshot.cpu_percent))
         elif snapshot.cpu_percent >= self._thresholds['cpu_warning']:
-            self.alert_triggered.emit('warning', f'CPU较高: {snapshot.cpu_percent}%')
-        
+            self.alert_triggered.emit('warning', tr('perf.cpu_warning', value=snapshot.cpu_percent))
+
         if snapshot.memory_percent >= self._thresholds['memory_critical']:
-            self.alert_triggered.emit('critical', f'内存过高: {snapshot.memory_percent}%')
+            self.alert_triggered.emit('critical', tr('perf.memory_critical', value=snapshot.memory_percent))
         elif snapshot.memory_percent >= self._thresholds['memory_warning']:
-            self.alert_triggered.emit('warning', f'内存较高: {snapshot.memory_percent}%')
+            self.alert_triggered.emit('warning', tr('perf.memory_warning', value=snapshot.memory_percent))
     
     def set_thresholds(self, thresholds: Dict):
         self._thresholds.update(thresholds)

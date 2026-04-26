@@ -5,6 +5,7 @@ Shodan 搜索引擎客户端
 import requests
 from typing import Dict, List
 from .search_engine_base import SearchEngineBase, SearchResult, register_engine
+from i18n import tr
 
 
 class ShodanClient(SearchEngineBase):
@@ -29,7 +30,7 @@ class ShodanClient(SearchEngineBase):
             page_size: 每页结果数（Shodan 固定每页100条）
         """
         if not self.api_key:
-            return {'success': False, 'error': '请配置 Shodan API Key'}
+            return {'success': False, 'error': tr("search.shodan.config_api_key")}
         
         try:
             url = f"{self.api_url}/shodan/host/search"
@@ -42,11 +43,11 @@ class ShodanClient(SearchEngineBase):
             response = requests.get(url, params=params, timeout=30)
             
             if response.status_code == 401:
-                return {'success': False, 'error': 'Shodan API Key 无效'}
+                return {'success': False, 'error': tr("search.shodan.invalid_api_key")}
             elif response.status_code == 402:
-                return {'success': False, 'error': 'Shodan 查询配额不足'}
+                return {'success': False, 'error': tr("search.shodan.insufficient_quota")}
             elif response.status_code != 200:
-                return {'success': False, 'error': f'Shodan API 错误: HTTP {response.status_code}'}
+                return {'success': False, 'error': tr("search.shodan.api_error", code=response.status_code)}
             
             data = response.json()
             
@@ -91,16 +92,16 @@ class ShodanClient(SearchEngineBase):
             }
             
         except requests.exceptions.Timeout:
-            return {'success': False, 'error': 'Shodan API 请求超时'}
+            return {'success': False, 'error': tr("search.shodan.request_timeout")}
         except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': f'Shodan API 请求失败: {str(e)}'}
+            return {'success': False, 'error': tr("search.shodan.request_failed", error=str(e))}
         except Exception as e:
-            return {'success': False, 'error': f'解析 Shodan 结果失败: {str(e)}'}
+            return {'success': False, 'error': tr("search.shodan.parse_failed", error=str(e))}
     
     def test_connection(self) -> Dict:
         """测试连接"""
         if not self.api_key:
-            return {'success': False, 'message': '请配置 API Key'}
+            return {'success': False, 'message': tr("search.config_api_key")}
         
         try:
             url = f"{self.api_url}/api-info"
@@ -111,19 +112,19 @@ class ShodanClient(SearchEngineBase):
                 data = response.json()
                 return {
                     'success': True,
-                    'message': f"连接成功，计划: {data.get('plan', 'N/A')}",
+                    'message': tr("search.shodan.connection_success_plan", plan=data.get('plan', 'N/A')),
                     'quota': {
                         'query_credits': data.get('query_credits', 0),
                         'scan_credits': data.get('scan_credits', 0),
                     }
                 }
             elif response.status_code == 401:
-                return {'success': False, 'message': 'API Key 无效'}
+                return {'success': False, 'message': tr("search.invalid_api_key")}
             else:
-                return {'success': False, 'message': f'连接失败: HTTP {response.status_code}'}
+                return {'success': False, 'message': tr("search.connection_failed_with_code", code=response.status_code)}
                 
         except Exception as e:
-            return {'success': False, 'message': f'连接失败: {str(e)}'}
+            return {'success': False, 'message': tr("search.connection_failed_with_error", error=str(e))}
     
     def get_config_fields(self) -> List[Dict]:
         return [

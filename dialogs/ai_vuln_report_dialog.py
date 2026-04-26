@@ -13,8 +13,10 @@ from PyQt5.QtGui import QFont
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.ui_scale import scaled, scaled_style
 from core.settings_manager import get_settings
 from core.ai_client import AIWorkerThreadV2, AIClient
+from i18n import tr, get_current_language
 
 
 class AIVulnReportDialog(QDialog):
@@ -35,47 +37,45 @@ class AIVulnReportDialog(QDialog):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("AI 漏洞报告生成")
-        self.resize(700, 600)
-        self.setMinimumSize(500, 400)
+        self.setWindowTitle(tr("ai.vuln_report_title"))
+        self.resize(scaled(700), scaled(600))
+        self.setMinimumSize(scaled(500), scaled(400))
 
         # 应用主题样式
         from core.fortress_style import get_dialog_stylesheet, get_button_style, get_secondary_button_style
         self.setStyleSheet(get_dialog_stylesheet(self.colors))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(scaled(10))
+        layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
 
         # 漏洞信息显示
-        info_group = QGroupBox("漏洞信息")
+        info_group = QGroupBox(tr("report.vuln_info"))
         info_layout = QVBoxLayout(info_group)
         self.info_display = QTextEdit()
         self.info_display.setPlainText(self.vuln_info)
-        self.info_display.setMaximumHeight(120)
+        self.info_display.setMaximumHeight(scaled(120))
         self.info_display.setReadOnly(True)
         info_layout.addWidget(self.info_display)
         layout.addWidget(info_group)
 
         # 报告类型选择
         type_layout = QHBoxLayout()
-        type_layout.addWidget(QLabel("报告类型:"))
+        type_layout.addWidget(QLabel(tr("report.report_type_label")))
         self.report_type_combo = QComboBox()
-        self.report_type_combo.setMinimumWidth(200)
-        self.report_type_combo.addItems([
-            "补天/SRC 提交报告",
-            "详细技术分析报告",
-            "简要漏洞说明",
-            "修复建议报告"
-        ])
+        self.report_type_combo.setMinimumWidth(scaled(200))
+        self.report_type_combo.addItem(tr("report.type_src"), "src_report")
+        self.report_type_combo.addItem(tr("report.type_detailed_analysis"), "detailed_analysis")
+        self.report_type_combo.addItem(tr("report.type_brief_description"), "brief_description")
+        self.report_type_combo.addItem(tr("report.type_fix_report"), "fix_report")
         type_layout.addWidget(self.report_type_combo)
         type_layout.addStretch()
         layout.addLayout(type_layout)
 
         # 生成按钮
-        btn_generate = QPushButton("生成报告")
+        btn_generate = QPushButton(tr("report.generate_report"))
         btn_generate.setStyleSheet(get_button_style('primary', self.colors))
-        btn_generate.setMinimumHeight(36)
+        btn_generate.setMinimumHeight(scaled(36))
         btn_generate.clicked.connect(self.generate_report)
         layout.addWidget(btn_generate)
 
@@ -86,35 +86,32 @@ class AIVulnReportDialog(QDialog):
         layout.addWidget(self.progress)
 
         # 报告输出
-        report_group = QGroupBox("生成的报告")
+        report_group = QGroupBox(tr("report.generated_report"))
         report_layout = QVBoxLayout(report_group)
         self.report_output = QTextEdit()
         self.report_output.setReadOnly(True)
-        self.report_output.setFont(QFont("Microsoft YaHei", 10))
-        self.report_output.setPlaceholderText("点击上方按钮生成报告...")
+        self.report_output.setFont(QFont("Microsoft YaHei", scaled(10)))
+        self.report_output.setPlaceholderText(tr("report.click_to_generate"))
         report_layout.addWidget(self.report_output)
         layout.addWidget(report_group)
 
         # 底部按钮
         btn_layout = QHBoxLayout()
 
-        btn_copy = QPushButton("复制报告")
+        btn_copy = QPushButton(tr("report.copy_report"))
         btn_copy.setStyleSheet(get_button_style('info', self.colors))
-        btn_copy.setMinimumWidth(100)
         btn_copy.clicked.connect(self.copy_report)
         btn_layout.addWidget(btn_copy)
 
-        btn_save = QPushButton("保存为文件")
+        btn_save = QPushButton(tr("report.save_as_file"))
         btn_save.setStyleSheet(get_button_style('success', self.colors))
-        btn_save.setMinimumWidth(100)
         btn_save.clicked.connect(self.save_report)
         btn_layout.addWidget(btn_save)
 
         btn_layout.addStretch()
 
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(tr("common.close"))
         btn_close.setStyleSheet(get_secondary_button_style(self.colors))
-        btn_close.setMinimumWidth(80)
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
 
@@ -135,14 +132,14 @@ class AIVulnReportDialog(QDialog):
         """生成漏洞报告"""
         api_url, api_key, model = self.get_current_ai_config()
         if not api_key:
-            QMessageBox.warning(self, "错误", "请先在设置中配置 AI 模型")
+            QMessageBox.warning(self, tr("msg.error"), tr("ai.please_config_ai_settings"))
             return
 
-        report_type = self.report_type_combo.currentText()
+        report_type = self.report_type_combo.currentData()
         prompt = self.build_prompt(report_type)
 
         self.progress.show()
-        self.report_output.setPlainText("⏳ 正在生成报告，请稍候...")
+        self.report_output.setPlainText(tr("report.generating"))
 
         # 使用自定义的报告生成任务
         self.ai_worker = VulnReportWorker(api_url, api_key, model, prompt)
@@ -172,11 +169,11 @@ class AIVulnReportDialog(QDialog):
 
         # 危害等级映射
         severity_map = {
-            "critical": "严重",
-            "high": "高危",
-            "medium": "中危",
-            "low": "低危",
-            "info": "信息"
+            "critical": tr("severity.critical"),
+            "high": tr("severity.high"),
+            "medium": tr("severity.medium"),
+            "low": tr("severity.low"),
+            "info": tr("severity.info")
         }
         severity_cn = severity_map.get(severity.lower(), severity)
 
@@ -204,6 +201,171 @@ class AIVulnReportDialog(QDialog):
         from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
 
+        if get_current_language() == "en_US":
+            severity_label = {
+                "critical": "Critical",
+                "high": "High",
+                "medium": "Medium",
+                "low": "Low",
+                "info": "Info",
+            }.get(severity.lower(), severity)
+
+            if any(t in str(tags).lower() for t in ["rce", "command", "exec"]):
+                vuln_category_en = "Remote Command Execution"
+            elif any(t in str(tags).lower() for t in ["sqli", "sql"]):
+                vuln_category_en = "SQL Injection"
+            elif any(t in str(tags).lower() for t in ["xss"]):
+                vuln_category_en = "Cross-site Scripting"
+            elif any(t in str(tags).lower() for t in ["lfi", "rfi", "file", "read"]):
+                vuln_category_en = "Arbitrary File Read"
+            elif any(t in str(tags).lower() for t in ["upload"]):
+                vuln_category_en = "Arbitrary File Upload"
+            elif any(t in str(tags).lower() for t in ["ssrf"]):
+                vuln_category_en = "Server-side Request Forgery"
+            elif any(t in str(tags).lower() for t in ["unauth", "bypass"]):
+                vuln_category_en = "Unauthorized Access"
+            elif any(t in str(tags).lower() for t in ["disclosure", "exposure", "leak"]):
+                vuln_category_en = "Information Disclosure"
+            else:
+                vuln_category_en = "Other Web Vulnerability"
+
+            base_info_en = f"""Vulnerability Name: {name}
+Vulnerability ID: {template_id}
+Severity: {severity_label}
+Target URL: {matched_at}
+Base URL: {base_url}
+Description: {description}
+Tags: {', '.join(tags) if isinstance(tags, list) else tags}
+References: {', '.join(reference) if isinstance(reference, list) else reference}
+Request:
+{request_data if request_data else 'N/A'}"""
+
+            if report_type == "src_report":
+                return f"""You are a professional security researcher. Generate an English vulnerability report suitable for SRC or bug bounty submission based on the following information.
+
+{base_info_en}
+
+Use this Markdown structure exactly:
+
+# Vulnerability Report
+
+## 1. Overview
+
+| **Field** | **Value** |
+| :--- | :--- |
+| **Title** | {base_url} is affected by {name} |
+| **Report Date** | {today} |
+| **Affected Asset** | Extract the IP or domain from the URL |
+| **Category** | {vuln_category_en} |
+| **Vulnerability Type** | Web Vulnerability |
+| **Severity** | {severity_label} |
+| **URL** | {base_url} |
+
+## 2. Vulnerability Details
+
+### Impact
+Describe 5-7 practical impacts. Use concise, actionable wording.
+
+### Reproduction Steps
+If exploitation requires multiple steps, describe each step with its purpose, request, expected response, and how the next step uses the result.
+
+### Payload
+```http
+Full HTTP request or reproduction payload
+```
+
+## 3. Remediation
+
+```text
+List 5-8 concrete remediation recommendations.
+```
+
+Requirements:
+1. Use only the base URL in the URL field.
+2. Explain multi-step exploitation clearly when applicable.
+3. Keep the report professional, specific, and actionable.
+4. Output the final report in English."""
+
+            if report_type == "detailed_analysis":
+                return f"""You are a senior security analyst. Generate an English technical analysis report from the following vulnerability information.
+
+{base_info_en}
+
+Include:
+
+## 1. Overview
+- Vulnerability type and severity
+- Affected scope
+
+## 2. Technical Analysis
+- Root cause
+- Trigger conditions
+- Attack vectors
+
+## 3. Exploitation
+- Preconditions
+- Exploitation steps
+- Possible attack scenarios
+
+## 4. Impact Assessment
+- Confidentiality impact
+- Integrity impact
+- Availability impact
+- Business risk
+
+## 5. Detection
+- How to detect this issue
+- Log indicators
+- Traffic indicators
+
+## 6. Remediation
+- Temporary mitigations
+- Permanent fixes
+- Hardening recommendations
+
+## 7. References
+- Related CVEs
+- Vendor advisories
+- Technical documentation"""
+
+            if report_type == "brief_description":
+                return f"""Generate a concise English vulnerability summary based on the following information.
+
+{base_info_en}
+
+Briefly explain:
+1. What the vulnerability is
+2. How severe it is
+3. How to fix it
+
+Keep it under 200 words."""
+
+            return f"""You are a security consultant. Generate an English remediation report based on the following vulnerability information.
+
+{base_info_en}
+
+Include:
+
+## 1. Summary
+Briefly describe the vulnerability.
+
+## 2. Risk Assessment
+Assess the severity and business impact.
+
+## 3. Immediate Mitigation
+List temporary actions that can be applied quickly.
+
+## 4. Permanent Fix
+Describe the long-term remediation plan.
+
+## 5. Hardening Recommendations
+Suggest how to prevent similar issues.
+
+## 6. Verification
+Explain how to verify the issue is fixed.
+
+Make the recommendations specific and actionable."""
+
         base_info = f"""漏洞名称: {name}
 漏洞ID: {template_id}
 危害等级: {severity}
@@ -215,7 +377,7 @@ class AIVulnReportDialog(QDialog):
 请求包:
 {request_data if request_data else '无'}"""
 
-        if report_type == "补天/SRC 提交报告":
+        if report_type == "src_report":
             return f"""你是一个专业的安全研究员，请根据以下漏洞信息生成一份适合提交到补天、漏洞盒子等 SRC 平台的漏洞报告。
 
 {base_info}
@@ -277,7 +439,7 @@ class AIVulnReportDialog(QDialog):
 4. 漏洞说明要详细描述危害，每条危害用【】标注关键词
 5. 修复建议要具体可操作"""
 
-        elif report_type == "详细技术分析报告":
+        elif report_type == "detailed_analysis":
             return f"""你是一个资深安全分析师，请根据以下漏洞信息生成一份详细的技术分析报告。
 
 {base_info}
@@ -319,7 +481,7 @@ class AIVulnReportDialog(QDialog):
 - 官方公告
 - 技术文档"""
 
-        elif report_type == "简要漏洞说明":
+        elif report_type == "brief_description":
             return f"""请根据以下漏洞信息生成一份简要的漏洞说明，适合快速了解漏洞情况。
 
 {base_info}
@@ -366,22 +528,22 @@ class AIVulnReportDialog(QDialog):
     def on_error(self, error):
         """处理错误"""
         self.progress.hide()
-        self.report_output.setPlainText(f"❌ 生成失败: {error}")
+        self.report_output.setPlainText(tr("report.generate_failed", error=error))
 
     def copy_report(self):
         """复制报告"""
         text = self.report_output.toPlainText()
         if text and not text.startswith("⏳") and not text.startswith("❌"):
             QApplication.clipboard().setText(text)
-            QMessageBox.information(self, "成功", "报告已复制到剪贴板")
+            QMessageBox.information(self, tr("msg.success"), tr("report.copied_to_clipboard"))
         else:
-            QMessageBox.warning(self, "提示", "请先生成报告")
+            QMessageBox.warning(self, tr("msg.hint"), tr("report.please_generate_first"))
 
     def save_report(self):
         """保存报告为文件"""
         text = self.report_output.toPlainText()
         if not text or text.startswith("⏳") or text.startswith("❌"):
-            QMessageBox.warning(self, "提示", "请先生成报告")
+            QMessageBox.warning(self, tr("msg.hint"), tr("report.please_generate_first"))
             return
 
         from PyQt5.QtWidgets import QFileDialog
@@ -389,20 +551,21 @@ class AIVulnReportDialog(QDialog):
 
         # 生成默认文件名
         template_id = self.raw_result.get("template-id", self.raw_result.get("templateID", "vuln"))
-        default_name = f"漏洞报告_{template_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.md"
+        prefix = "vulnerability_report" if get_current_language() == "en_US" else "漏洞报告"
+        default_name = f"{prefix}_{template_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.md"
 
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "保存报告", default_name,
-            "Markdown 文件 (*.md);;文本文件 (*.txt);;所有文件 (*)"
+            self, tr("report.save_report"), default_name,
+            tr("report.file_filter_md")
         )
 
         if filepath:
             try:
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(text)
-                QMessageBox.information(self, "成功", f"报告已保存到:\n{filepath}")
+                QMessageBox.information(self, tr("msg.success"), tr("report.saved_to", filepath=filepath))
             except Exception as e:
-                QMessageBox.warning(self, "错误", f"保存失败: {str(e)}")
+                QMessageBox.warning(self, tr("msg.error"), tr("ai.save_failed", error=str(e)))
 
 
 class VulnReportWorker(AIWorkerThreadV2):
@@ -423,4 +586,4 @@ class VulnReportWorker(AIWorkerThreadV2):
             result = client._call_api(self.prompt)
             self.result_signal.emit(result)
         except Exception as e:
-            self.error_signal.emit(f"发生错误: {str(e)}")
+            self.error_signal.emit(tr("ai.error_occurred", error=str(e)))

@@ -6,6 +6,7 @@ import yaml
 import json
 from datetime import datetime
 from urllib.parse import urlparse
+from i18n import tr, get_current_language
 
 
 class VulnReportGenerator:
@@ -14,12 +15,12 @@ class VulnReportGenerator:
     def __init__(self):
         # 危险等级映射
         self.severity_map = {
-            'critical': '严重',
-            'high': '高危',
-            'medium': '中危',
-            'low': '低危',
-            'info': '信息',
-            'unknown': '未知'
+            'critical': tr("severity.critical"),
+            'high': tr("severity.high"),
+            'medium': tr("severity.medium"),
+            'low': tr("severity.low"),
+            'info': tr("severity.info"),
+            'unknown': tr("severity.unknown")
         }
         
         # 漏洞类型识别规则 (标签关键词 -> 漏洞类型)
@@ -326,7 +327,7 @@ class VulnReportGenerator:
                     if kw_lower in str(keyword):
                         return vuln_type
         
-        return '其他漏洞'
+        return tr("severity.other_vuln")
 
     def get_harm_description(self, vuln_type: str) -> str:
         """获取漏洞危害描述"""
@@ -335,6 +336,57 @@ class VulnReportGenerator:
     def get_fix_suggestion(self, vuln_type: str) -> str:
         """获取修复建议"""
         return self.fix_templates.get(str(vuln_type), self.default_fix)
+
+    def _is_english(self) -> bool:
+        return get_current_language() == 'en_US'
+
+    def _severity_label(self, severity: str) -> str:
+        severity_key = str(severity or 'unknown').lower()
+        if self._is_english():
+            return {
+                'critical': 'Critical',
+                'high': 'High',
+                'medium': 'Medium',
+                'low': 'Low',
+                'info': 'Info',
+                'unknown': 'Unknown',
+            }.get(severity_key, severity_key.title())
+        return self.severity_map.get(severity_key, tr("severity.unknown"))
+
+    def _vuln_type_en(self, vuln_type: str) -> str:
+        return {
+            'SQL注入': 'SQL Injection',
+            'XSS跨站脚本': 'Cross-site Scripting (XSS)',
+            '远程命令执行': 'Remote Command Execution',
+            '任意文件上传': 'Arbitrary File Upload',
+            'SSRF服务端请求伪造': 'Server-side Request Forgery (SSRF)',
+            '文件包含/路径遍历': 'File Inclusion / Path Traversal',
+            '越权访问/认证绕过': 'Authorization Bypass',
+            '信息泄露': 'Information Disclosure',
+            '弱口令/默认密码': 'Weak or Default Credentials',
+            'XXE外部实体注入': 'XML External Entity (XXE)',
+            '未授权访问': 'Unauthorized Access',
+            '反序列化漏洞': 'Deserialization Vulnerability',
+            'CSRF跨站请求伪造': 'Cross-site Request Forgery (CSRF)',
+        }.get(str(vuln_type), 'Other Web Vulnerability')
+
+    def _harm_description_en(self, vuln_type: str) -> str:
+        return f'''An attacker may exploit this {vuln_type} issue to:
+1. **Unauthorized access**: access protected functions, endpoints, or resources without proper authorization.
+2. **Sensitive data exposure**: retrieve configuration files, credentials, tokens, business data, or user information.
+3. **Privilege escalation**: perform actions beyond the intended permission scope.
+4. **Service impact**: disrupt normal business workflows or degrade service availability.
+5. **Lateral movement**: use the affected host as a foothold for further internal network attacks.
+6. **Compliance and business risk**: cause data leakage, audit findings, incident response cost, or reputational damage.'''
+
+    def _fix_suggestion_en(self, vuln_type: str) -> str:
+        return f'''1. **Patch or upgrade**: update the affected component, framework, or service to a fixed version.
+2. **Validate inputs and outputs**: enforce strict server-side validation, canonicalization, and safe output encoding where applicable.
+3. **Strengthen access control**: verify authentication and authorization on every sensitive endpoint and operation.
+4. **Reduce exposure**: restrict access by network ACLs, firewall rules, VPN, or zero-trust policies.
+5. **Harden configuration**: disable unnecessary features, remove default credentials, and apply least-privilege settings.
+6. **Monitor and alert**: add logs and detection rules for suspicious requests, exploitation attempts, and abnormal responses.
+7. **Retest after remediation**: rerun the relevant POC and regression tests to confirm the vulnerability is fixed.'''
 
     def parse_poc_file(self, poc_path: str) -> dict:
         """
@@ -431,7 +483,7 @@ class VulnReportGenerator:
         
         # 严重等级
         severity = merged_data.get('severity', info.get('severity', 'unknown'))
-        severity_cn = self.severity_map.get(str(severity).lower() if severity else 'unknown', '未知')
+        severity_label = self._severity_label(severity)
         
         # 漏洞类型
         vuln_type = self.identify_vuln_type(merged_data)
@@ -461,11 +513,48 @@ class VulnReportGenerator:
         # 4. 漏洞标题
         vuln_name = info.get('name', template_id) if isinstance(info, dict) else template_id
         # 移除可能存在的非法文件名字符
-        title = f"{domain}存在{vuln_name}"
+        if self._is_english():
+            title = f"{domain} is affected by {vuln_name}"
+        else:
+            title = f"{domain}存在{vuln_name}"
         
         # 5. 生成报告 (Markdown 表格格式)
         current_date = datetime.now().strftime("%Y-%m-%d")
         
+        if self._is_english():
+            vuln_type_en = self._vuln_type_en(vuln_type)
+            report = f'''# Vulnerability Report
+
+## 1. Overview
+
+| **Field** | **Value** |
+| :--- | :--- |
+| **Title** | {title} |
+| **Report Date** | {current_date} |
+| **Affected Asset** | {domain} |
+| **Category** | {vuln_type_en} |
+| **Vulnerability Type** | Web Vulnerability |
+| **Severity** | {severity_label} |
+| **URL** | {base_url} |
+
+## 2. Vulnerability Details
+
+### Impact
+{self._harm_description_en(vuln_type_en)}
+
+### Payload
+```http
+{payload_content}
+```
+
+## 3. Remediation
+
+```text
+{self._fix_suggestion_en(vuln_type_en)}
+```
+'''
+            return report
+
         report = f'''# 漏洞报告
 
 ## 一、 漏洞概述
@@ -477,7 +566,7 @@ class VulnReportGenerator:
 | **漏洞单位** | {domain} |
 | **漏洞分类** | {vuln_type} |
 | **漏洞类型** | Web漏洞 |
-| **漏洞等级** | {severity_cn} |
+| **漏洞等级** | {severity_label} |
 | **URL地址** | {base_url} |
 
 ## 二、 漏洞说明

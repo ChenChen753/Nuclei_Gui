@@ -16,6 +16,8 @@ from datetime import datetime
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from core.vuln_report_generator import get_report_generator
+from core.ui_scale import scaled, scaled_style
+from i18n import tr
 
 
 class VulnReportDialog(QDialog):
@@ -41,20 +43,20 @@ class VulnReportDialog(QDialog):
         """初始化界面"""
         from core.fortress_style import apply_fortress_style, get_button_style
         
-        self.setWindowTitle("漏洞报告生成器 - 补天SRC格式")
-        self.setMinimumSize(800, 700)
-        self.resize(900, 800)
+        self.setWindowTitle(tr("report.generator_title"))
+        self.setMinimumSize(scaled(800), scaled(700))
+        self.resize(scaled(900), scaled(800))
         
         # 应用全局主题样式
         apply_fortress_style(self, self.colors)
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(scaled(10))
         
         # 顶部信息区
-        info_group = QGroupBox("漏洞信息")
+        info_group = QGroupBox(tr("report.vuln_info"))
         # 显式设置 GroupBox 样式以匹配主题
-        info_group.setStyleSheet(f"""
+        info_group.setStyleSheet(scaled_style(f"""
             QGroupBox {{
                 font-weight: bold;
                 border: 1px solid {self.colors.get('nav_border', '#e5e7eb')};
@@ -68,35 +70,37 @@ class VulnReportDialog(QDialog):
                 left: 10px;
                 padding: 0 5px;
             }}
-        """)
+        """))
         info_layout = QHBoxLayout(info_group)
         
         # 漏洞类型
-        info_layout.addWidget(QLabel("漏洞类型:"))
+        info_layout.addWidget(QLabel(tr("report.vuln_type_label")))
         self.type_combo = QComboBox()
         self.type_combo.addItems([
-            "SQL注入", "XSS跨站脚本", "远程命令执行", "任意文件上传",
-            "SSRF服务端请求伪造", "文件包含/路径遍历", "越权访问/认证绕过",
-            "信息泄露", "弱口令/默认密码", "XXE外部实体注入",
-            "未授权访问", "反序列化漏洞", "CSRF跨站请求伪造", "其他漏洞"
+            tr("report.vuln_type_sqli"), tr("report.vuln_type_xss"), tr("report.vuln_type_rce"),
+            tr("report.vuln_type_upload"), tr("report.vuln_type_ssrf"), tr("report.vuln_type_lfi"),
+            tr("report.vuln_type_auth_bypass"), tr("report.vuln_type_info_leak"),
+            tr("report.vuln_type_weak_password"), tr("report.vuln_type_xxe"),
+            tr("report.vuln_type_unauth"), tr("report.vuln_type_deserialization"),
+            tr("report.vuln_type_csrf"), tr("report.vuln_type_other")
         ])
-        self.type_combo.setMinimumWidth(180)
+        self.type_combo.setMinimumWidth(scaled(180))
         self.type_combo.currentTextChanged.connect(self.on_type_changed)
         info_layout.addWidget(self.type_combo)
         
         info_layout.addSpacing(20)
         
         # 危害等级
-        info_layout.addWidget(QLabel("危害等级:"))
+        info_layout.addWidget(QLabel(tr("report.severity_label")))
         self.severity_combo = QComboBox()
-        self.severity_combo.addItems(["严重", "高危", "中危", "低危", "信息"])
-        self.severity_combo.setMinimumWidth(100)
+        self.severity_combo.addItems([tr("severity.critical"), tr("severity.high"), tr("severity.medium"), tr("severity.low"), tr("severity.info")])
+        self.severity_combo.setMinimumWidth(scaled(100))
         info_layout.addWidget(self.severity_combo)
         
         info_layout.addStretch()
         
         # 刷新按钮
-        refresh_btn = QPushButton("刷新模板")
+        refresh_btn = QPushButton(tr("report.refresh_template"))
         refresh_btn.setStyleSheet(get_button_style("info", self.colors))
         refresh_btn.clicked.connect(self.refresh_template)
         info_layout.addWidget(refresh_btn)
@@ -104,9 +108,9 @@ class VulnReportDialog(QDialog):
         layout.addWidget(info_group)
         
         # 报告编辑区
-        edit_group = QGroupBox("报告内容 (支持Markdown)")
+        edit_group = QGroupBox(tr("report.content_markdown"))
         # 显式设置 GroupBox 样式
-        edit_group.setStyleSheet(f"""
+        edit_group.setStyleSheet(scaled_style(f"""
             QGroupBox {{
                 font-weight: bold;
                 border: 1px solid {self.colors.get('nav_border', '#e5e7eb')};
@@ -120,12 +124,12 @@ class VulnReportDialog(QDialog):
                 left: 10px;
                 padding: 0 5px;
             }}
-        """)
+        """))
         edit_layout = QVBoxLayout(edit_group)
         
         self.report_edit = QTextEdit()
-        self.report_edit.setFont(QFont("Consolas", 10))
-        self.report_edit.setPlaceholderText("报告内容将在这里生成...")
+        self.report_edit.setFont(QFont("Consolas", scaled(10)))
+        self.report_edit.setPlaceholderText(tr("report.content_placeholder"))
         edit_layout.addWidget(self.report_edit)
         
         layout.addWidget(edit_group, 1)
@@ -134,13 +138,13 @@ class VulnReportDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         # 复制按钮
-        copy_btn = QPushButton("复制到剪贴板")
+        copy_btn = QPushButton(tr("report.copy_to_clipboard"))
         copy_btn.setStyleSheet(get_button_style("success", self.colors))
         copy_btn.clicked.connect(self.copy_to_clipboard)
         btn_layout.addWidget(copy_btn)
         
         # 导出按钮
-        export_btn = QPushButton("导出报告")
+        export_btn = QPushButton(tr("report.export_report"))
         export_btn.setStyleSheet(get_button_style("primary", self.colors))
         export_btn.clicked.connect(self.export_report)
         btn_layout.addWidget(export_btn)
@@ -148,7 +152,7 @@ class VulnReportDialog(QDialog):
         btn_layout.addStretch()
         
         # 关闭按钮
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(tr("common.close"))
         close_btn.setStyleSheet(get_button_style("warning", self.colors))
         close_btn.clicked.connect(self.close)
         btn_layout.addWidget(close_btn)
@@ -172,19 +176,19 @@ class VulnReportDialog(QDialog):
             severity = self.vuln_data.get('severity', 'unknown')
             if isinstance(severity, str):
                 severity_map = {
-                    'critical': '严重',
-                    'high': '高危',
-                    'medium': '中危',
-                    'low': '低危',
-                    'info': '信息'
+                    'critical': tr("severity.critical"),
+                    'high': tr("severity.high"),
+                    'medium': tr("severity.medium"),
+                    'low': tr("severity.low"),
+                    'info': tr("severity.info")
                 }
-                severity_cn = severity_map.get(severity.lower(), '中危')
+                severity_cn = severity_map.get(severity.lower(), tr("severity.medium"))
                 index = self.severity_combo.findText(severity_cn)
                 if index >= 0:
                     self.severity_combo.setCurrentIndex(index)
                     
         except Exception as e:
-            self.report_edit.setText(f"生成报告失败: {str(e)}")
+            self.report_edit.setText(tr("report.generate_report_failed", error=str(e)))
     
     def on_type_changed(self, vuln_type: str):
         """漏洞类型变更时的处理"""
@@ -228,13 +232,13 @@ class VulnReportDialog(QDialog):
             report = report[:fix_content_start] + new_fix
         
         self.report_edit.setText(report)
-        QMessageBox.information(self, "提示", f"已更新为 {vuln_type} 类型的模板")
+        QMessageBox.information(self, tr("msg.hint"), tr("report.template_updated", vuln_type=vuln_type))
     
     def copy_to_clipboard(self):
         """复制报告到剪贴板"""
         clipboard = QApplication.clipboard()
         clipboard.setText(self.report_edit.toPlainText())
-        QMessageBox.information(self, "成功", "报告已复制到剪贴板！\n可直接粘贴到补天平台。")
+        QMessageBox.information(self, tr("msg.success"), tr("report.copied_for_butian"))
     
     def export_report(self):
         """导出报告为文件"""
@@ -245,15 +249,15 @@ class VulnReportDialog(QDialog):
         # 选择保存路径
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "导出漏洞报告",
+            tr("report.export_vuln_report"),
             default_name,
-            "Markdown文件 (*.md);;文本文件 (*.txt);;所有文件 (*.*)"
+            tr("report.file_filter_md")
         )
         
         if file_path:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(self.report_edit.toPlainText())
-                QMessageBox.information(self, "成功", f"报告已导出到:\n{file_path}")
+                QMessageBox.information(self, tr("msg.success"), tr("report.exported_to", filepath=file_path))
             except Exception as e:
-                QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+                QMessageBox.critical(self, tr("msg.error"), tr("report.export_failed", error=str(e)))

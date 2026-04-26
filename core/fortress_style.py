@@ -3,19 +3,16 @@ FORTRESS 风格共享样式和组件
 用于统一所有对话框和界面的样式
 支持动态主题切换
 """
+from core.ui_scale import scaled_style
 
-def get_table_stylesheet(colors=None):
-    """获取表格通用样式"""
-    if colors is None:
-        colors = {}
-    # 判断是否是深色主题
+def _get_table_stylesheet_raw(colors):
+    """获取表格通用样式（未缩放，供内部嵌入使用）"""
     is_dark = colors.get('is_dark', False)
     if not is_dark and 'content_bg' in colors:
         is_dark = colors.get('content_bg', '').lower() in ['#1e293b', '#1a2332', '#111827']
-    
+
     bg_color = colors.get('content_bg', '#1e293b') if is_dark else 'white'
 
-    
     return f"""
         QTableWidget {{
             border: 1px solid {colors.get('nav_border', '#e5e7eb')};
@@ -38,12 +35,12 @@ def get_table_stylesheet(colors=None):
             color: white;
             border: none;
         }}
-        
+
         QHeaderView {{
             background-color: transparent;
             border: none;
         }}
-        
+
         QHeaderView::section {{
             background-color: {colors.get('table_header', '#f1f5f9')};
             padding: 8px;
@@ -53,7 +50,7 @@ def get_table_stylesheet(colors=None):
             font-weight: bold;
             color: {colors.get('text_primary', '#1f2937')};
         }}
-        
+
         /* 垂直表头（序号列）特殊处理 */
         QHeaderView::section:vertical {{
             background-color: {colors.get('table_header', '#f1f5f9')};
@@ -62,7 +59,7 @@ def get_table_stylesheet(colors=None):
             color: {colors.get('text_secondary', '#6b7280')};
             padding-left: 5px;
         }}
-        
+
         QTableCornerButton::section {{
             background-color: {colors.get('table_header', '#f1f5f9')};
             border: none;
@@ -71,17 +68,21 @@ def get_table_stylesheet(colors=None):
         }}
     """
 
-def get_list_stylesheet(colors=None):
-    """获取列表通用样式"""
+
+def get_table_stylesheet(colors=None):
+    """获取表格通用样式（自动缩放）"""
     if colors is None:
         colors = {}
+    return scaled_style(_get_table_stylesheet_raw(colors))
+
+def _get_list_stylesheet_raw(colors):
+    """获取列表通用样式（未缩放，供内部嵌入使用）"""
     is_dark = colors.get('is_dark', False)
     if not is_dark and 'content_bg' in colors:
          is_dark = colors.get('content_bg', '').lower() in ['#1e293b', '#1a2332', '#111827']
-         
+
     bg_color = colors.get('content_bg', '#1e293b') if is_dark else 'white'
 
-    
     return f"""
         QListWidget {{
             border: 1px solid {colors.get('nav_border', '#e5e7eb')};
@@ -108,6 +109,13 @@ def get_list_stylesheet(colors=None):
         }}
     """
 
+
+def get_list_stylesheet(colors=None):
+    """获取列表通用样式（自动缩放）"""
+    if colors is None:
+        colors = {}
+    return scaled_style(_get_list_stylesheet_raw(colors))
+
 def get_menu_stylesheet(colors=None):
     """获取菜单通用样式"""
     if colors is None:
@@ -118,7 +126,7 @@ def get_menu_stylesheet(colors=None):
          
     bg_color = colors.get('content_bg', '#1e293b') if is_dark else 'white'
     
-    return f"""
+    return scaled_style(f"""
         QMenu {{
             background-color: {bg_color};
             border: 1px solid {colors.get('nav_border', '#e5e7eb')};
@@ -144,7 +152,7 @@ def get_menu_stylesheet(colors=None):
             width: 16px;
             height: 16px;
         }}
-    """
+    """)
 
 def get_dialog_stylesheet(colors=None):
     """获取对话框基础样式"""
@@ -156,7 +164,7 @@ def get_dialog_stylesheet(colors=None):
          
     input_bg = colors.get('table_header', '#334155') if is_dark else 'white'
     
-    return f"""
+    return scaled_style(f"""
         QDialog, QMessageBox {{
             background-color: {colors.get('content_bg', '#f8fafc')};
         }}
@@ -216,8 +224,8 @@ def get_dialog_stylesheet(colors=None):
         QRadioButton {{
             color: {colors.get('text_primary', '#1f2937')};
         }}
-        {get_table_stylesheet(colors)}
-    """
+        {_get_table_stylesheet_raw(colors)}
+    """)
 
 
 def get_button_style(btn_type='primary', colors=None):
@@ -235,7 +243,7 @@ def get_button_style(btn_type='primary', colors=None):
     
     bg, hover = color_map.get(btn_type, color_map['primary'])
     
-    return f"""
+    return scaled_style(f"""
         QPushButton {{
             background-color: {bg};
             color: white;
@@ -252,7 +260,7 @@ def get_button_style(btn_type='primary', colors=None):
         QPushButton:disabled {{
             background-color: #9ca3af;
         }}
-    """
+    """)
 
 
 def get_secondary_button_style(colors=None):
@@ -266,7 +274,7 @@ def get_secondary_button_style(colors=None):
          
     bg_color = colors.get('table_header', '#334155') if is_dark else 'white'
     
-    return f"""
+    return scaled_style(f"""
         QPushButton {{
             background-color: {bg_color};
             color: {colors.get('text_primary', '#1f2937')};
@@ -279,7 +287,7 @@ def get_secondary_button_style(colors=None):
         QPushButton:hover {{
             background-color: {colors.get('nav_hover', '#f3f4f6')};
         }}
-    """
+    """)
 
 
 def get_table_button_style(btn_type='info', colors=None, min_width=70):
@@ -301,7 +309,7 @@ def get_table_button_style(btn_type='info', colors=None, min_width=70):
 
     bg, hover = color_map.get(btn_type, color_map['info'])
 
-    return f"""
+    return scaled_style(f"""
         QPushButton {{
             background-color: {bg};
             color: white;
@@ -317,11 +325,11 @@ def get_table_button_style(btn_type='info', colors=None, min_width=70):
         QPushButton:disabled {{
             background-color: #9ca3af;
         }}
-    """
+    """)
 
 
 def apply_fortress_style(dialog, colors=None):
-    """应用 FORTRESS 样式到对话框"""
+    """应用 FORTRESS 样式到对话框（已内置缩放）"""
     if colors is None:
         colors = {}
     dialog.setStyleSheet(get_dialog_stylesheet(colors))
@@ -339,8 +347,8 @@ def get_global_stylesheet(colors=None):
     input_bg = colors.get('table_header', '#334155') if is_dark else 'white'
     scroll_bg = colors.get('nav_border', '#334155')
     scroll_handle = '#64748b' if is_dark else '#cbd5e1'
-    
-    return f"""
+
+    return scaled_style(f"""
         /* 滚动条样式 */
         QScrollBar:vertical {{
             border: none;
@@ -458,10 +466,10 @@ def get_global_stylesheet(colors=None):
         }}
         
         /* 表格样式 */
-        {get_table_stylesheet(colors)}
-        
+        {_get_table_stylesheet_raw(colors)}
+
         /* 列表样式 */
-        {get_list_stylesheet(colors)}
+        {_get_list_stylesheet_raw(colors)}
         
         /* 标签页样式 */
         QTabWidget::pane {{
@@ -541,7 +549,7 @@ def get_global_stylesheet(colors=None):
         QMessageBox QLabel {{
             color: {colors.get('text_primary', '#1f2937')};
         }}
-    """
+    """)
 
 
 # 兼容旧接口 - 使用默认颜色

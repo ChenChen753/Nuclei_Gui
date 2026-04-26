@@ -14,9 +14,11 @@ from PyQt5.QtGui import QFont
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.ui_scale import scaled, scaled_style
 from core.settings_manager import get_settings
 from core.ai_client import AIWorkerThreadV2
 from core.history_manager import get_history_manager
+from i18n import tr
 
 
 class AIAssistantDialog(QDialog):
@@ -36,9 +38,9 @@ class AIAssistantDialog(QDialog):
         self.init_ui()
     
     def init_ui(self):
-        self.setWindowTitle("🤖 AI 助手")
-        self.resize(750, 600)
-        self.setMinimumSize(600, 450)
+        self.setWindowTitle(tr("ai.assistant_title"))
+        self.resize(scaled(750), scaled(600))
+        self.setMinimumSize(scaled(600), scaled(450))
         
         layout = QVBoxLayout(self)
 
@@ -46,26 +48,26 @@ class AIAssistantDialog(QDialog):
         self.tabs = QTabWidget()
         
         # Tab 1: FOFA 语法生成
-        self.tabs.addTab(self.create_fofa_tab(), "🔍 FOFA 语法")
+        self.tabs.addTab(self.create_fofa_tab(), tr("ai.tab_fofa"))
 
         # Tab 2: POC 生成
-        self.tabs.addTab(self.create_poc_tab(), "🛠️ POC 生成")
+        self.tabs.addTab(self.create_poc_tab(), tr("ai.tab_poc"))
 
         # Tab 3: 漏洞分析
-        self.tabs.addTab(self.create_analyze_tab(), "📊 漏洞分析")
+        self.tabs.addTab(self.create_analyze_tab(), tr("ai.tab_analyze"))
 
         # Tab 4: 智能推荐
-        self.tabs.addTab(self.create_recommend_tab(), "💡 智能推荐")
+        self.tabs.addTab(self.create_recommend_tab(), tr("ai.tab_recommend"))
 
         # Tab 5: 历史记录
-        self.tabs.addTab(self.create_history_tab(), "📜 历史记录")
+        self.tabs.addTab(self.create_history_tab(), tr("ai.tab_history"))
         
         layout.addWidget(self.tabs)
         
         # 底部按钮
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(tr("common.close"))
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
         layout.addLayout(btn_layout)
@@ -76,14 +78,14 @@ class AIAssistantDialog(QDialog):
         layout = QVBoxLayout(widget)
         
         # 输入
-        layout.addWidget(QLabel("输入 POC 名称或漏洞描述:"))
+        layout.addWidget(QLabel(tr("ai.fofa_input_label")))
         self.fofa_input = QLineEdit()
-        self.fofa_input.setPlaceholderText("例如: ThinkPHP 5.0.23 远程代码执行")
+        self.fofa_input.setPlaceholderText(tr("ai.fofa_input_placeholder"))
         self.fofa_input.setText(self.initial_poc_name)
         layout.addWidget(self.fofa_input)
         
-        btn = QPushButton("✨ 生成 FOFA 语法")
-        btn.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; padding: 8px;")
+        btn = QPushButton(tr("ai.generate_fofa_btn"))
+        btn.setStyleSheet(scaled_style("background-color: #3498db; color: white; font-weight: bold; padding: 8px;"))
         btn.clicked.connect(lambda: self.do_ai_task(AIWorkerThreadV2.TASK_FOFA, self.fofa_input, self.fofa_output))
         layout.addWidget(btn)
         
@@ -95,16 +97,16 @@ class AIAssistantDialog(QDialog):
         # 输出
         self.fofa_output = QTextEdit()
         self.fofa_output.setReadOnly(True)
-        self.fofa_output.setFont(QFont("Microsoft YaHei", 10))
+        self.fofa_output.setFont(QFont("Microsoft YaHei", scaled(10)))
         layout.addWidget(self.fofa_output)
         
         # 复制按钮
         copy_layout = QHBoxLayout()
-        btn_copy_fofa = QPushButton("📋 复制并跳转 FOFA")
-        btn_copy_fofa.setStyleSheet("background-color: #e67e22; color: white; padding: 5px 10px;")
+        btn_copy_fofa = QPushButton(tr("ai.copy_and_goto_fofa"))
+        btn_copy_fofa.setStyleSheet(scaled_style("background-color: #e67e22; color: white; padding: 5px 10px;"))
         btn_copy_fofa.clicked.connect(self.copy_fofa_and_open)
         copy_layout.addWidget(btn_copy_fofa)
-        btn_copy_all = QPushButton("📄 复制全部")
+        btn_copy_all = QPushButton(tr("common.copy_all"))
         btn_copy_all.clicked.connect(lambda: self.copy_text(self.fofa_output))
         copy_layout.addWidget(btn_copy_all)
         copy_layout.addStretch()
@@ -117,22 +119,14 @@ class AIAssistantDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        layout.addWidget(QLabel("输入漏洞描述，AI 将生成 Nuclei YAML POC:"))
+        layout.addWidget(QLabel(tr("ai.poc_input_label")))
         self.poc_input = QTextEdit()
-        self.poc_input.setPlaceholderText(
-            "请详细描述漏洞信息，例如:\n"
-            "- 漏洞名称: ThinkPHP 5.0.23 远程代码执行\n"
-            "- 漏洞路径: /index.php?s=captcha\n"
-            "- 请求方法: POST\n"
-            "- 漏洞参数: _method=__construct&filter[]=system&method=get&server[REQUEST_METHOD]=id\n"
-            "- 匹配特征: uid= 或 gid=\n"
-            "- 影响版本: ThinkPHP 5.0.x < 5.0.24"
-        )
-        self.poc_input.setMaximumHeight(120)
+        self.poc_input.setPlaceholderText(tr("ai.poc_input_placeholder"))
+        self.poc_input.setMaximumHeight(scaled(120))
         layout.addWidget(self.poc_input)
 
-        btn = QPushButton("🛠️ 生成 POC")
-        btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 8px;")
+        btn = QPushButton(tr("ai.generate_poc_btn"))
+        btn.setStyleSheet(scaled_style("background-color: #27ae60; color: white; font-weight: bold; padding: 8px;"))
         btn.clicked.connect(self.do_poc_generate)
         layout.addWidget(btn)
 
@@ -143,18 +137,18 @@ class AIAssistantDialog(QDialog):
 
         self.poc_output = QTextEdit()
         self.poc_output.setReadOnly(True)
-        self.poc_output.setFont(QFont("Consolas", 10))
-        self.poc_output.setPlaceholderText("生成的 POC 将显示在这里...")
+        self.poc_output.setFont(QFont("Consolas", scaled(10)))
+        self.poc_output.setPlaceholderText(tr("ai.poc_output_placeholder"))
         layout.addWidget(self.poc_output)
 
         # 操作按钮
         btn_layout = QHBoxLayout()
-        btn_copy = QPushButton("📋 复制 POC")
+        btn_copy = QPushButton(tr("ai.copy_poc"))
         btn_copy.clicked.connect(lambda: self.copy_text(self.poc_output))
         btn_layout.addWidget(btn_copy)
 
-        btn_save = QPushButton("💾 保存到 POC 库")
-        btn_save.setStyleSheet("background-color: #3498db; color: white;")
+        btn_save = QPushButton(tr("ai.save_to_poc_library"))
+        btn_save.setStyleSheet(scaled_style("background-color: #3498db; color: white;"))
         btn_save.clicked.connect(self.save_generated_poc)
         btn_layout.addWidget(btn_save)
 
@@ -167,19 +161,19 @@ class AIAssistantDialog(QDialog):
         """执行 POC 生成"""
         content = self.poc_input.toPlainText().strip()
         if not content:
-            QMessageBox.warning(self, "提示", "请输入漏洞描述")
+            QMessageBox.warning(self, tr("msg.hint"), tr("ai.please_input_vuln_desc"))
             return
 
         api_url, api_key, model = self.get_current_ai_config()
         if not api_key:
-            QMessageBox.warning(self, "错误", "请先配置 AI 模型")
+            QMessageBox.warning(self, tr("msg.error"), tr("ai.please_config_ai"))
             return
 
         self.current_input_text = content
         self.current_model_name = model
 
         self.poc_progress.show()
-        self.poc_output.setPlainText("⏳ 正在生成 POC，请稍候...")
+        self.poc_output.setPlainText(tr("ai.generating_poc"))
 
         self.ai_worker = AIWorkerThreadV2(api_url, api_key, model, AIWorkerThreadV2.TASK_POC, content)
         self.ai_worker.result_signal.connect(self.on_poc_result)
@@ -206,7 +200,7 @@ class AIAssistantDialog(QDialog):
         """保存生成的 POC 到 POC 库"""
         content = self.poc_output.toPlainText().strip()
         if not content or content.startswith("⏳") or content.startswith("❌"):
-            QMessageBox.warning(self, "提示", "请先生成有效的 POC")
+            QMessageBox.warning(self, tr("msg.hint"), tr("ai.please_generate_valid_poc"))
             return
 
         # 提取 YAML 代码块
@@ -236,8 +230,8 @@ class AIAssistantDialog(QDialog):
         # 检查文件是否存在
         if os.path.exists(filepath):
             reply = QMessageBox.question(
-                self, "文件已存在",
-                f"POC 文件 {filename} 已存在，是否覆盖？",
+                self, tr("msg.file_exists"),
+                tr("ai.poc_file_exists_overwrite", filename=filename),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -247,22 +241,22 @@ class AIAssistantDialog(QDialog):
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(yaml_content)
-            QMessageBox.information(self, "成功", f"POC 已保存到:\n{filepath}")
+            QMessageBox.information(self, tr("msg.success"), tr("ai.poc_saved_to", filepath=filepath))
         except Exception as e:
-            QMessageBox.warning(self, "错误", f"保存失败: {str(e)}")
+            QMessageBox.warning(self, tr("msg.error"), tr("ai.save_failed", error=str(e)))
 
     def create_analyze_tab(self):
         """漏洞分析 Tab"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
-        layout.addWidget(QLabel("输入漏洞信息，获取深入分析和修复建议:"))
+        layout.addWidget(QLabel(tr("ai.analyze_input_label")))
         self.analyze_input = QLineEdit()
-        self.analyze_input.setPlaceholderText("例如: CVE-2024-1234 SQL Injection in User Login")
+        self.analyze_input.setPlaceholderText(tr("ai.analyze_input_placeholder"))
         layout.addWidget(self.analyze_input)
         
-        btn = QPushButton("📊 分析漏洞")
-        btn.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold; padding: 8px;")
+        btn = QPushButton(tr("ai.analyze_vuln_btn"))
+        btn.setStyleSheet(scaled_style("background-color: #e74c3c; color: white; font-weight: bold; padding: 8px;"))
         btn.clicked.connect(lambda: self.do_ai_task(AIWorkerThreadV2.TASK_ANALYZE, self.analyze_input, self.analyze_output))
         layout.addWidget(btn)
         
@@ -273,11 +267,11 @@ class AIAssistantDialog(QDialog):
         
         self.analyze_output = QTextEdit()
         self.analyze_output.setReadOnly(True)
-        self.analyze_output.setFont(QFont("Microsoft YaHei", 10))
+        self.analyze_output.setFont(QFont("Microsoft YaHei", scaled(10)))
         layout.addWidget(self.analyze_output)
         
         copy_layout = QHBoxLayout()
-        btn_copy = QPushButton("📋 复制分析报告")
+        btn_copy = QPushButton(tr("ai.copy_analysis_report"))
         btn_copy.clicked.connect(lambda: self.copy_text(self.analyze_output))
         copy_layout.addWidget(btn_copy)
         copy_layout.addStretch()
@@ -290,13 +284,13 @@ class AIAssistantDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
-        layout.addWidget(QLabel("输入目标信息，获取 POC 推荐:"))
+        layout.addWidget(QLabel(tr("ai.recommend_input_label")))
         self.recommend_input = QLineEdit()
-        self.recommend_input.setPlaceholderText("例如: Apache/2.4.49, PHP/7.4, WordPress 5.8")
+        self.recommend_input.setPlaceholderText(tr("ai.recommend_input_placeholder"))
         layout.addWidget(self.recommend_input)
         
-        btn = QPushButton("💡 获取推荐")
-        btn.setStyleSheet("background-color: #9b59b6; color: white; font-weight: bold; padding: 8px;")
+        btn = QPushButton(tr("ai.get_recommend_btn"))
+        btn.setStyleSheet(scaled_style("background-color: #9b59b6; color: white; font-weight: bold; padding: 8px;"))
         btn.clicked.connect(lambda: self.do_ai_task(AIWorkerThreadV2.TASK_RECOMMEND, self.recommend_input, self.recommend_output))
         layout.addWidget(btn)
         
@@ -307,11 +301,11 @@ class AIAssistantDialog(QDialog):
         
         self.recommend_output = QTextEdit()
         self.recommend_output.setReadOnly(True)
-        self.recommend_output.setFont(QFont("Microsoft YaHei", 10))
+        self.recommend_output.setFont(QFont("Microsoft YaHei", scaled(10)))
         layout.addWidget(self.recommend_output)
         
         copy_layout = QHBoxLayout()
-        btn_copy = QPushButton("📋 复制推荐")
+        btn_copy = QPushButton(tr("ai.copy_recommend"))
         btn_copy.clicked.connect(lambda: self.copy_text(self.recommend_output))
         copy_layout.addWidget(btn_copy)
         copy_layout.addStretch()
@@ -330,12 +324,12 @@ class AIAssistantDialog(QDialog):
         """执行 AI 任务"""
         content = input_widget.text().strip()
         if not content:
-            QMessageBox.warning(self, "提示", "请输入内容")
+            QMessageBox.warning(self, tr("msg.hint"), tr("ai.please_input_content"))
             return
-        
+
         api_url, api_key, model = self.get_current_ai_config()
         if not api_key:
-            QMessageBox.warning(self, "错误", "请先配置 AI 模型")
+            QMessageBox.warning(self, tr("msg.error"), tr("ai.please_config_ai"))
             return
         
         # 保存当前输入（用于历史记录）
@@ -352,7 +346,7 @@ class AIAssistantDialog(QDialog):
         if progress:
             progress.show()
         
-        output_widget.setPlainText("⏳ 正在请求 AI 生成中，请稍候...")
+        output_widget.setPlainText(tr("ai.requesting_ai"))
         
         self.ai_worker = AIWorkerThreadV2(api_url, api_key, model, task_type, content)
         self.ai_worker.result_signal.connect(lambda r: self.on_ai_result(r, output_widget, progress, task_type))
@@ -388,7 +382,7 @@ class AIAssistantDialog(QDialog):
         """AI 返回错误"""
         if progress:
             progress.hide()
-        output_widget.setPlainText(f"❌ 错误: {error}")
+        output_widget.setPlainText(tr("ai.error_prefix", error=error))
     
     def extract_fofa_query(self, text):
         """提取 FOFA 语法"""
@@ -410,9 +404,9 @@ class AIAssistantDialog(QDialog):
         """复制 FOFA 语法"""
         if self.generated_fofa_query:
             QApplication.clipboard().setText(self.generated_fofa_query)
-            QMessageBox.information(self, "成功", f"已复制:\n{self.generated_fofa_query}")
+            QMessageBox.information(self, tr("msg.success"), tr("ai.copied_fofa", query=self.generated_fofa_query))
         else:
-            QMessageBox.warning(self, "提示", "未能提取 FOFA 语法，请手动复制")
+            QMessageBox.warning(self, tr("msg.hint"), tr("ai.fofa_extract_failed_copy"))
     
     def copy_fofa_and_open(self):
         """复制 FOFA 语法并跳转到内置 FOFA 搜索页面"""
@@ -428,14 +422,14 @@ class AIAssistantDialog(QDialog):
             if self.parent() and hasattr(self.parent(), 'open_fofa_dialog'):
                 self.parent().open_fofa_dialog(query=self.generated_fofa_query)
         else:
-            QMessageBox.warning(self, "提示", "未能提取 FOFA 语法，请先生成")
+            QMessageBox.warning(self, tr("msg.hint"), tr("ai.fofa_extract_failed_generate"))
     
     def copy_text(self, widget):
         """复制文本"""
         text = widget.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
-            QMessageBox.information(self, "成功", "已复制到剪贴板")
+            QMessageBox.information(self, tr("msg.success"), tr("common.copied_to_clipboard"))
     
     
     def create_history_tab(self):
@@ -444,22 +438,22 @@ class AIAssistantDialog(QDialog):
         layout = QVBoxLayout(widget)
         
         # 提示
-        layout.addWidget(QLabel("💡 双击历史记录查看详情，右键删除"))
+        layout.addWidget(QLabel(tr("ai.history_hint")))
         
         # 任务类型筛选
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("类型筛选:"))
+        filter_row.addWidget(QLabel(tr("ai.filter_type")))
         self.history_type_combo = QComboBox()
-        self.history_type_combo.addItems(["全部", "FOFA语法", "POC生成", "漏洞分析", "智能推荐"])
+        self.history_type_combo.addItems([tr("ai.filter_all"), tr("ai.filter_fofa"), tr("ai.filter_poc"), tr("ai.filter_analyze"), tr("ai.filter_recommend")])
         self.history_type_combo.currentTextChanged.connect(self.refresh_ai_history)
         filter_row.addWidget(self.history_type_combo)
         filter_row.addStretch()
         
-        btn_refresh = QPushButton("🔄 刷新")
+        btn_refresh = QPushButton(tr("ai.refresh"))
         btn_refresh.clicked.connect(self.refresh_ai_history)
         filter_row.addWidget(btn_refresh)
-        
-        btn_clear = QPushButton("🗑️ 清空")
+
+        btn_clear = QPushButton(tr("ai.clear_history"))
         btn_clear.clicked.connect(self.clear_ai_history)
         filter_row.addWidget(btn_clear)
         
@@ -475,8 +469,8 @@ class AIAssistantDialog(QDialog):
         # 详情显示
         self.history_detail = QTextEdit()
         self.history_detail.setReadOnly(True)
-        self.history_detail.setMaximumHeight(150)
-        self.history_detail.setFont(QFont("Microsoft YaHei", 9))
+        self.history_detail.setMaximumHeight(scaled(150))
+        self.history_detail.setFont(QFont("Microsoft YaHei", scaled(9)))
         layout.addWidget(self.history_detail)
         
         # 初始加载
@@ -490,11 +484,11 @@ class AIAssistantDialog(QDialog):
 
         # 任务类型映射
         type_map = {
-            "全部": None,
-            "FOFA语法": "fofa",
-            "POC生成": "poc",
-            "漏洞分析": "analyze",
-            "智能推荐": "recommend"
+            tr("ai.filter_all"): None,
+            tr("ai.filter_fofa"): "fofa",
+            tr("ai.filter_poc"): "poc",
+            tr("ai.filter_analyze"): "analyze",
+            tr("ai.filter_recommend"): "recommend"
         }
 
         filter_type = self.history_type_combo.currentText()
@@ -503,10 +497,10 @@ class AIAssistantDialog(QDialog):
         histories = self.history_manager.get_ai_history(task_type=task_type, limit=50)
 
         type_labels = {
-            "fofa": "🔍 FOFA",
-            "poc": "🛠️ POC",
-            "analyze": "📊 分析",
-            "recommend": "💡 推荐"
+            "fofa": tr("ai.history_label_fofa"),
+            "poc": tr("ai.history_label_poc"),
+            "analyze": tr("ai.history_label_analyze"),
+            "recommend": tr("ai.history_label_recommend")
         }
 
         for h in histories:
@@ -516,7 +510,7 @@ class AIAssistantDialog(QDialog):
             label = type_labels.get(t_type, t_type)
 
             item = QListWidgetItem(f"[{label}] {input_text}...")
-            item.setToolTip(f"时间: {time_str}\n输入: {h.get('input_text', '')}")
+            item.setToolTip(tr("ai.history_tooltip", time=time_str, input=h.get('input_text', '')))
             item.setData(Qt.UserRole, h)
             self.ai_history_list.addItem(item)
     
@@ -524,7 +518,7 @@ class AIAssistantDialog(QDialog):
         """显示历史记录详情"""
         history = item.data(Qt.UserRole)
         if history:
-            detail = f"【输入】\n{history.get('input_text', '')}\n\n【输出】\n{history.get('output_text', '')}"
+            detail = tr("ai.history_detail", input=history.get('input_text', ''), output=history.get('output_text', ''))
             self.history_detail.setPlainText(detail)
     
     def show_ai_history_menu(self, pos):
@@ -535,13 +529,13 @@ class AIAssistantDialog(QDialog):
         
         menu = QMenu(self)
         
-        view_action = menu.addAction("👁️ 查看详情")
+        view_action = menu.addAction(tr("ai.view_detail"))
         view_action.triggered.connect(lambda: self.show_ai_history_detail(item))
-        
-        copy_action = menu.addAction("📋 复制输出")
+
+        copy_action = menu.addAction(tr("ai.copy_output"))
         copy_action.triggered.connect(lambda: self.copy_ai_history_output(item))
-        
-        delete_action = menu.addAction("🗑️ 删除")
+
+        delete_action = menu.addAction(tr("ai.delete"))
         delete_action.triggered.connect(lambda: self.delete_ai_history_item(item))
         
         menu.exec_(self.ai_history_list.mapToGlobal(pos))
@@ -551,7 +545,7 @@ class AIAssistantDialog(QDialog):
         history = item.data(Qt.UserRole)
         if history:
             QApplication.clipboard().setText(history.get('output_text', ''))
-            QMessageBox.information(self, "成功", "已复制到剪贴板")
+            QMessageBox.information(self, tr("msg.success"), tr("common.copied_to_clipboard"))
     
     def delete_ai_history_item(self, item):
         """删除 AI 历史记录"""
@@ -563,7 +557,7 @@ class AIAssistantDialog(QDialog):
     def clear_ai_history(self):
         """清空 AI 历史记录"""
         reply = QMessageBox.question(
-            self, "确认", "确定要清空所有 AI 生成历史吗？",
+            self, tr("msg.confirm"), tr("ai.confirm_clear_history"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if reply == QMessageBox.Yes:

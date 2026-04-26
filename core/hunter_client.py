@@ -6,13 +6,14 @@ import requests
 import base64
 from typing import Dict, List
 from .search_engine_base import SearchEngineBase, SearchResult, register_engine
+from i18n import tr
 
 
 class HunterClient(SearchEngineBase):
     """Hunter 搜索引擎客户端"""
     
     name = "hunter"
-    display_name = "Hunter 鹰图"
+    display_name = tr("search.hunter.display_name")
     
     def __init__(self, api_key: str = "", api_url: str = "", **kwargs):
         super().__init__(api_key, api_url, **kwargs)
@@ -30,7 +31,7 @@ class HunterClient(SearchEngineBase):
             page_size: 每页结果数（最大100）
         """
         if not self.api_key:
-            return {'success': False, 'error': '请配置 Hunter API Key'}
+            return {'success': False, 'error': tr("search.hunter.config_api_key")}
         
         try:
             # Hunter API 需要 Base64 编码搜索语句
@@ -50,7 +51,7 @@ class HunterClient(SearchEngineBase):
             if data.get('code') != 200:
                 return {
                     'success': False,
-                    'error': data.get('message', f"Hunter API 错误: {data.get('code')}")
+                    'error': data.get('message', tr("search.hunter.api_error", code=data.get('code')))
                 }
             
             # 解析结果
@@ -89,16 +90,16 @@ class HunterClient(SearchEngineBase):
             }
             
         except requests.exceptions.Timeout:
-            return {'success': False, 'error': 'Hunter API 请求超时'}
+            return {'success': False, 'error': tr("search.hunter.request_timeout")}
         except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': f'Hunter API 请求失败: {str(e)}'}
+            return {'success': False, 'error': tr("search.hunter.request_failed", error=str(e))}
         except Exception as e:
-            return {'success': False, 'error': f'解析 Hunter 结果失败: {str(e)}'}
+            return {'success': False, 'error': tr("search.hunter.parse_failed", error=str(e))}
     
     def test_connection(self) -> Dict:
         """测试连接"""
         if not self.api_key:
-            return {'success': False, 'message': '请配置 API Key'}
+            return {'success': False, 'message': tr("search.config_api_key")}
         
         # 使用一个简单的查询测试
         result = self.search('port="80"', page=1, page_size=1)
@@ -106,12 +107,12 @@ class HunterClient(SearchEngineBase):
         if result.get('success'):
             return {
                 'success': True,
-                'message': f"连接成功，共找到 {result.get('total', 0)} 条结果",
+                'message': tr("search.connection_success_with_total", total=result.get('total', 0)),
             }
         else:
             return {
                 'success': False,
-                'message': result.get('error', '连接失败'),
+                'message': result.get('error', tr("search.connection_failed")),
             }
     
     def get_config_fields(self) -> List[Dict]:

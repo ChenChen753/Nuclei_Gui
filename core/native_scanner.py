@@ -8,6 +8,7 @@ import threading
 from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt5.QtCore import QObject, pyqtSignal
+from i18n import tr
 
 # 禁用 SSL 警告（扫描工具通常需要访问自签名证书的目标）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -76,7 +77,7 @@ class NativeScanner(QObject):
     def run(self):
         """执行扫描"""
         total_tasks = len(self.targets) * len(self.templates)
-        self.log_signal.emit(f"[*] Native 引擎启动: {len(self.targets)} 目标, {len(self.templates)} POC, 并发 {self.max_workers}")
+        self.log_signal.emit(tr("scanner.engine_started", targets=len(self.targets), templates=len(self.templates), workers=self.max_workers))
 
         # 创建共享 Session，便于快速关闭
         self._session = requests.Session()
@@ -101,7 +102,7 @@ class NativeScanner(QObject):
                         'http': data.get('http', [])
                     })
             except Exception as e:
-                self.log_signal.emit(f"[!] 模板解析失败 {t_path}: {e}")
+                self.log_signal.emit(tr("scanner.template_parse_failed", path=t_path, error=e))
 
         # 任务队列
         tasks = []
@@ -152,7 +153,7 @@ class NativeScanner(QObject):
                 # 降频发送进度，避免 UI 卡顿
                 if self._is_running and (processed_count % 5 == 0 or processed_count == len(tasks)):
                     try:
-                        self.progress_signal.emit(processed_count, len(tasks), f"扫描中... {processed_count}/{len(tasks)}")
+                        self.progress_signal.emit(processed_count, len(tasks), tr("scanner.scanning_progress", current=processed_count, total=len(tasks)))
                     except RuntimeError:
                         pass  # 信号可能已断开
                     
@@ -179,9 +180,9 @@ class NativeScanner(QObject):
         # 安全地发送完成信号
         try:
             if self._is_running:
-                self.log_signal.emit("[*] 扫描完成")
+                self.log_signal.emit(tr("scanner.scan_complete"))
             else:
-                self.log_signal.emit("[*] 扫描已停止")
+                self.log_signal.emit(tr("scanner.scan_stopped"))
             self.finished_signal.emit()
         except RuntimeError:
             pass  # 信号可能已断开

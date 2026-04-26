@@ -12,6 +12,8 @@ from PyQt5.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.ui_scale import scaled, scaled_style
+from i18n import tr
 
 
 class YAMLHighlighter(QSyntaxHighlighter):
@@ -98,43 +100,43 @@ class POCEditorDialog(QDialog):
             self.load_file(poc_path)
     
     def init_ui(self):
-        self.setWindowTitle("POC 编辑器")
-        self.resize(900, 650)
-        self.setMinimumSize(600, 400)
+        self.setWindowTitle(tr("poc.editor_title"))
+        self.resize(scaled(900), scaled(650))
+        self.setMinimumSize(scaled(600), scaled(400))
         
         # 应用 FORTRESS 样式
         from core.fortress_style import get_dialog_stylesheet, get_button_style, get_secondary_button_style
         self.setStyleSheet(get_dialog_stylesheet(self.colors))
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(scaled(15))
+        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(20))
         
         # 工具栏
         toolbar = QHBoxLayout()
         
-        self.path_label = QLabel("新建 POC")
-        self.path_label.setStyleSheet(f"color: {self.colors['text_secondary']}; font-size: 13px;")
+        self.path_label = QLabel(tr("poc.new_poc"))
+        self.path_label.setStyleSheet(scaled_style(f"color: {self.colors['text_secondary']}; font-size: 13px;"))
         toolbar.addWidget(self.path_label)
         
         toolbar.addStretch()
         
-        btn_new = QPushButton("新建")
+        btn_new = QPushButton(tr("poc.new"))
         btn_new.setStyleSheet(get_secondary_button_style(self.colors))
         btn_new.clicked.connect(self.new_file)
         toolbar.addWidget(btn_new)
-        
-        btn_open = QPushButton("打开")
+
+        btn_open = QPushButton(tr("poc.open"))
         btn_open.setStyleSheet(get_secondary_button_style(self.colors))
         btn_open.clicked.connect(self.open_file)
         toolbar.addWidget(btn_open)
-        
-        btn_save = QPushButton("保存")
+
+        btn_save = QPushButton(tr("common.save"))
         btn_save.setStyleSheet(get_button_style('success', self.colors))
         btn_save.clicked.connect(self.save_file)
         toolbar.addWidget(btn_save)
-        
-        btn_save_as = QPushButton("另存为")
+
+        btn_save_as = QPushButton(tr("poc.save_as"))
         btn_save_as.setStyleSheet(get_secondary_button_style(self.colors))
         btn_save_as.clicked.connect(self.save_file_as)
         toolbar.addWidget(btn_save_as)
@@ -143,7 +145,7 @@ class POCEditorDialog(QDialog):
         
         # 编辑区
         self.editor = QPlainTextEdit()
-        self.editor.setFont(QFont("Consolas", 11))
+        self.editor.setFont(QFont("Consolas", scaled(11)))
         
         # 编辑器统一使用深色代码编辑器风格，确保良好的可读性
         # 深色背景 + 浅色文字，类似 VS Code 风格
@@ -151,7 +153,7 @@ class POCEditorDialog(QDialog):
         text_color = "#cdd6f4"
         border_color = self.colors['nav_border']
         
-        self.editor.setStyleSheet(f"""
+        self.editor.setStyleSheet(scaled_style(f"""
             QPlainTextEdit {{
                 background-color: {bg_color};
                 color: {text_color};
@@ -159,7 +161,7 @@ class POCEditorDialog(QDialog):
                 border-radius: 8px;
                 padding: 15px;
             }}
-        """)
+        """))
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.editor.textChanged.connect(self.on_text_changed)
         
@@ -169,20 +171,20 @@ class POCEditorDialog(QDialog):
         layout.addWidget(self.editor)
         
         # 模板提示
-        template_tip = QLabel("提示：编辑完成后点击保存，POC 将自动更新到库中")
-        template_tip.setStyleSheet(f"color: {self.colors['text_secondary']}; font-size: 12px;")
+        template_tip = QLabel(tr("poc.save_tip"))
+        template_tip.setStyleSheet(scaled_style(f"color: {self.colors['text_secondary']}; font-size: 12px;"))
         layout.addWidget(template_tip)
         
         # 底部按钮
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        btn_template = QPushButton("插入模板")
+        btn_template = QPushButton(tr("poc.insert_template"))
         btn_template.setStyleSheet(get_button_style('info', self.colors))
         btn_template.clicked.connect(self.insert_template)
         btn_layout.addWidget(btn_template)
-        
-        btn_close = QPushButton("关闭")
+
+        btn_close = QPushButton(tr("common.close"))
         btn_close.setStyleSheet(get_secondary_button_style(self.colors))
         btn_close.clicked.connect(self.close_editor)
         btn_layout.addWidget(btn_close)
@@ -204,34 +206,34 @@ class POCEditorDialog(QDialog):
             self.editor.setPlainText(content)
             self.poc_path = path
             self.path_label.setText(os.path.basename(path))
-            self.setWindowTitle(f"📝 POC 编辑器 - {os.path.basename(path)}")
+            self.setWindowTitle(f"{tr('poc.editor_title')} - {os.path.basename(path)}")
             self.is_modified = False
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法读取文件: {str(e)}")
-    
+            QMessageBox.critical(self, tr("msg.error"), tr("poc.read_file_failed", error=str(e)))
+
     def new_file(self):
         """新建文件"""
         if self.is_modified:
-            reply = QMessageBox.question(self, "确认", "当前文件未保存，是否放弃更改？",
+            reply = QMessageBox.question(self, tr("msg.confirm"), tr("poc.unsaved_discard"),
                                         QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.No:
                 return
-        
+
         self.editor.clear()
         self.poc_path = None
-        self.path_label.setText("新建 POC")
-        self.setWindowTitle("📝 POC 编辑器")
+        self.path_label.setText(tr("poc.new_poc"))
+        self.setWindowTitle(tr("poc.editor_title"))
         self.is_modified = False
     
     def open_file(self):
         """打开文件"""
         if self.is_modified:
-            reply = QMessageBox.question(self, "确认", "当前文件未保存，是否放弃更改？",
+            reply = QMessageBox.question(self, tr("msg.confirm"), tr("poc.unsaved_discard"),
                                         QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.No:
                 return
-        
-        file_path, _ = QFileDialog.getOpenFileName(self, "打开 POC 文件", "", "YAML Files (*.yaml *.yml)")
+
+        file_path, _ = QFileDialog.getOpenFileName(self, tr("poc.open_file"), "", "YAML Files (*.yaml *.yml)")
         if file_path:
             self.load_file(file_path)
     
@@ -245,14 +247,14 @@ class POCEditorDialog(QDialog):
             with open(self.poc_path, 'w', encoding='utf-8') as f:
                 f.write(self.editor.toPlainText())
             self.is_modified = False
-            self.setWindowTitle(f"📝 POC 编辑器 - {os.path.basename(self.poc_path)}")
-            QMessageBox.information(self, "成功", "文件已保存")
+            self.setWindowTitle(f"{tr('poc.editor_title')} - {os.path.basename(self.poc_path)}")
+            QMessageBox.information(self, tr("msg.success"), tr("poc.file_saved"))
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
+            QMessageBox.critical(self, tr("msg.error"), tr("poc.save_failed", error=str(e)))
     
     def save_file_as(self):
         """另存为"""
-        file_path, _ = QFileDialog.getSaveFileName(self, "另存为", "new_poc.yaml", "YAML Files (*.yaml *.yml)")
+        file_path, _ = QFileDialog.getSaveFileName(self, tr("poc.save_as"), "new_poc.yaml", "YAML Files (*.yaml *.yml)")
         if file_path:
             self.poc_path = file_path
             self.path_label.setText(os.path.basename(file_path))
@@ -289,7 +291,7 @@ http:
     def close_editor(self):
         """关闭编辑器"""
         if self.is_modified:
-            reply = QMessageBox.question(self, "确认", "当前文件未保存，是否放弃更改？",
+            reply = QMessageBox.question(self, tr("msg.confirm"), tr("poc.unsaved_discard"),
                                         QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.No:
                 return
