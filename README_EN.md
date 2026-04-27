@@ -6,7 +6,7 @@ A PyQt5-based graphical interface for Nuclei. It provides POC management, asset 
 
 ## Project Info
 
-- **Version**: 2.5.3
+- **Version**: 2.5.4
 - **Author**: 辰辰
 - **Tech Stack**: Python 3.x + PyQt5 + Nuclei
 - **Platforms**: Windows / macOS / Linux
@@ -118,7 +118,7 @@ For better Linux compatibility, build on a stable distribution such as Ubuntu 20
 
 ### Release Asset Policy
 
-- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.3.exe` or `Nuclei_GUI_windows_x64_v2.5.3.exe`. Binary update support is currently limited to the Windows exe build.
+- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.4.exe` or `Nuclei_GUI_windows_x64_v2.5.4.exe`. Binary update support is currently limited to the Windows exe build.
 - Source runs: the updater uses GitHub's generated source zip for source-code updates, so no extra source zip asset is required.
 - Windows exe runs: the updater detects the PyInstaller build, downloads the matching `Nuclei_GUI*.exe`, closes the current app, replaces the exe, and restarts automatically.
 - macOS/Linux: this repository provides local packaging scripts, but does not publish official binary assets for these systems.
@@ -175,6 +175,11 @@ You must not use this tool for:
 The author and contributors are not responsible for any misuse, abuse, unauthorized use, or direct or indirect damages caused by this tool. By downloading, installing, running, or redistributing this tool, you acknowledge that you understand and accept all risks and legal responsibilities.
 
 ## Changelog
+
+### v2.5.4
+
+- Fixed the Windows exe update fallback so exe download URLs are never processed as source zip packages.
+- Fixed update prompt rendering so newline escapes and Yes/No buttons are localized correctly.
 
 ### v2.5.3
 

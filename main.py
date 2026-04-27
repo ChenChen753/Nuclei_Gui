@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QProgressBar, QGridLayout, QPlainTextEdit, QDialog, QComboBox,
                              QToolBar, QAction, QFrame, QStackedWidget, QListWidget,
                              QListWidgetItem, QSizePolicy, QScrollArea)
-from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl
+from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl, QTimer, QCoreApplication
 from PyQt5.QtGui import QFont, QIcon, QColor, QPainter, QBrush, QPen, QDesktopServices
 
 # ================= DPI 缩放系统（从公共模块导入） =================
@@ -1560,6 +1560,7 @@ class MainWindow(QMainWindow):
         # 存储下载信息
         self._update_download_url = None
         self._update_version = None
+        self._update_package_type = None
 
         layout.addWidget(settings_tabs)
 
@@ -2285,18 +2286,21 @@ class MainWindow(QMainWindow):
         self._startup_update_thread.check_finished.connect(self._on_startup_update_check)
         self._startup_update_thread.start()
 
-    def _on_startup_update_check(self, has_update, latest_version, download_url, release_notes):
+    def _on_startup_update_check(self, has_update, latest_version, download_url, release_notes, package_type=None):
         """启动时更新检查完成"""
         if has_update:
-            from core.updater import get_current_version
-            reply = QMessageBox.question(
-                self,
-                tr("update.new_version_found"),
-                tr("update.new_version_prompt", latest=latest_version, current=get_current_version(), notes=release_notes[:200] + ('...' if len(release_notes) > 200 else '')),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+            from core.updater import get_current_version, normalize_update_package_type
+            self._update_download_url = download_url
+            self._update_version = latest_version
+            self._update_package_type = normalize_update_package_type(download_url, package_type)
+
+            prompt = tr(
+                "update.new_version_prompt",
+                latest=latest_version,
+                current=get_current_version(),
+                notes=release_notes[:200] + ('...' if len(release_notes) > 200 else ''),
             )
-            if reply == QMessageBox.Yes:
+            if self._show_localized_question(tr("update.new_version_found"), prompt, QMessageBox.No) == QMessageBox.Yes:
                 # 切换到主界面的设置页面，并选中更新设置 Tab
                 self._switch_page(5)  # 设置页面索引
                 # 找到设置页面中的 Tab 控件并切换到更新设置
@@ -3591,8 +3595,10 @@ class MainWindow(QMainWindow):
         self._update_check_thread.error_signal.connect(self._on_update_check_error)
         self._update_check_thread.start()
 
-    def _on_update_check_finished(self, has_update, latest_version, download_url, release_notes):
+    def _on_update_check_finished(self, has_update, latest_version, download_url, release_notes, package_type=None):
         """检查更新完成"""
+        from core.updater import normalize_update_package_type
+
         self.check_update_btn.setEnabled(True)
         self.update_latest_version_label.setText(f"v{latest_version}")
 
@@ -3602,10 +3608,14 @@ class MainWindow(QMainWindow):
             self.do_update_btn.setEnabled(True)
             self._update_download_url = download_url
             self._update_version = latest_version
+            self._update_package_type = normalize_update_package_type(download_url, package_type)
         else:
             self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['text_secondary']};")
             self.update_status_label.setText(tr("update.already_latest"))
             self.do_update_btn.setEnabled(False)
+            self._update_download_url = None
+            self._update_version = None
+            self._update_package_type = None
 
         self.release_notes_text.setText(release_notes if release_notes else tr("update.no_release_notes"))
 
@@ -3615,6 +3625,10 @@ class MainWindow(QMainWindow):
         self.update_latest_version_label.setText(tr("update.check_failed", error=error_msg))
         self.update_latest_version_label.setStyleSheet(f"color: {FORTRESS_COLORS['status_critical']};")
         self.update_status_label.setText(error_msg)
+        self.do_update_btn.setEnabled(False)
+        self._update_download_url = None
+        self._update_version = None
+        self._update_package_type = None
 
     def _do_update(self):
         """执行更新"""
@@ -3622,11 +3636,21 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("msg.warning"), tr("update.no_download_url"))
             return
 
-        reply = QMessageBox.question(
-            self, tr("update.confirm_update"),
-            tr("update.confirm_update_msg", version=self._update_version),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+        from core.updater import PACKAGE_WINDOWS_EXE, normalize_update_package_type
+        self._update_package_type = normalize_update_package_type(
+            self._update_download_url,
+            self._update_package_type,
+        )
+
+        confirm_key = (
+            "settings.update.confirm_body_binary"
+            if self._update_package_type == PACKAGE_WINDOWS_EXE
+            else "update.confirm_update_msg"
+        )
+        reply = self._show_localized_question(
+            tr("update.confirm_update"),
+            tr(confirm_key, version=self._update_version),
+            QMessageBox.No,
         )
 
         if reply != QMessageBox.Yes:
@@ -3640,7 +3664,8 @@ class MainWindow(QMainWindow):
         from core.updater import UpdateDownloadThread
         self._update_download_thread = UpdateDownloadThread(
             self._update_download_url,
-            self._update_version
+            self._update_version,
+            self._update_package_type,
         )
         self._update_download_thread.progress_signal.connect(self._on_update_progress)
         self._update_download_thread.finished_signal.connect(self._on_update_finished)
@@ -3657,13 +3682,20 @@ class MainWindow(QMainWindow):
         self.update_progress_bar.setVisible(False)
 
         if success:
+            from core.updater import PACKAGE_WINDOWS_EXE
+            if self._update_package_type == PACKAGE_WINDOWS_EXE:
+                QMessageBox.information(self, tr("update.update_success"), message)
+                self.update_status_label.setText(tr("settings.update.binary_closing"))
+                self.do_update_btn.setEnabled(False)
+                QTimer.singleShot(500, QCoreApplication.quit)
+                return
+
             QMessageBox.information(self, tr("update.update_success"), message)
             self.update_status_label.setText(tr("update.restart_needed"))
-            reply = QMessageBox.question(
-                self, tr("update.restart_app"),
+            reply = self._show_localized_question(
+                tr("update.restart_app"),
                 tr("update.restart_confirm"),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                QMessageBox.Yes,
             )
             if reply == QMessageBox.Yes:
                 self._restart_application()
@@ -3681,6 +3713,18 @@ class MainWindow(QMainWindow):
             os.execl(python, python)
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
         os.execl(python, python, script)
+
+    def _show_localized_question(self, title, text, default_button=QMessageBox.No):
+        """显示带本地化按钮和真实换行的确认弹窗。"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(str(text).replace("\\n", "\n"))
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(default_button)
+        msg_box.button(QMessageBox.Yes).setText(tr("common.yes"))
+        msg_box.button(QMessageBox.No).setText(tr("common.no"))
+        return msg_box.exec_()
 
     
     def _test_fofa_connection(self):

@@ -21,7 +21,7 @@ from core.settings_manager import get_settings
 from core.updater import (
     UpdateCheckThread, UpdateDownloadThread,
     get_current_version, PRESERVE_FILES, PRESERVE_DIRS,
-    PACKAGE_WINDOWS_EXE
+    PACKAGE_WINDOWS_EXE, normalize_update_package_type
 )
 
 
@@ -549,7 +549,7 @@ class SettingsDialog(QDialog):
         """检查更新完成"""
         self.check_update_btn.setEnabled(True)
         self.latest_version_label.setText(f"v{latest_version}")
-        self._update_package_type = package_type
+        self._update_package_type = normalize_update_package_type(download_url, package_type)
 
         if has_update:
             self.latest_version_label.setStyleSheet(scaled_style("color: #27ae60; font-weight: bold;"))
@@ -583,17 +583,21 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, tr("msg.warning"), tr("settings.update.no_download_url"))
             return
 
+        self._update_package_type = normalize_update_package_type(
+            self._update_download_url,
+            self._update_package_type,
+        )
+
         confirm_body_key = (
             "settings.update.confirm_body_binary"
             if self._update_package_type == PACKAGE_WINDOWS_EXE
             else "settings.update.confirm_body"
         )
 
-        reply = QMessageBox.question(
-            self, tr("settings.update.confirm_title"),
+        reply = self._show_localized_question(
+            tr("settings.update.confirm_title"),
             tr(confirm_body_key, version=self._update_version),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
 
         if reply != QMessageBox.Yes:
@@ -634,11 +638,10 @@ class SettingsDialog(QDialog):
             QMessageBox.information(self, tr("settings.update.success_title"), message)
             self.update_status_label.setText(tr("settings.update.complete_restart"))
             # 询问是否立即重启
-            reply = QMessageBox.question(
-                self, tr("settings.update.restart_title"),
+            reply = self._show_localized_question(
+                tr("settings.update.restart_title"),
                 tr("settings.update.restart_confirm"),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                QMessageBox.Yes,
             )
             if reply == QMessageBox.Yes:
                 self.restart_application()
@@ -664,3 +667,15 @@ class SettingsDialog(QDialog):
         """关闭应用，交给外部替换脚本完成 exe 更新。"""
         self.accept()
         QCoreApplication.quit()
+
+    def _show_localized_question(self, title, text, default_button=QMessageBox.No):
+        """显示带本地化按钮和真实换行的确认弹窗。"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(str(text).replace("\\n", "\n"))
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(default_button)
+        msg_box.button(QMessageBox.Yes).setText(tr("common.yes"))
+        msg_box.button(QMessageBox.No).setText(tr("common.no"))
+        return msg_box.exec_()

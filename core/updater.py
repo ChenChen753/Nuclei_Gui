@@ -10,6 +10,7 @@ import shutil
 import zipfile
 import tempfile
 import subprocess
+from urllib.parse import urlparse
 import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -19,7 +20,7 @@ from core.paths import app_dir
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.3"
+CURRENT_VERSION = "2.5.4"
 
 PACKAGE_SOURCE = "source"
 PACKAGE_WINDOWS_EXE = "windows_exe"
@@ -75,6 +76,30 @@ def _find_windows_exe_asset(assets):
             return url
 
     return ""
+
+
+def _is_windows_exe_url(download_url):
+    """判断下载地址是否指向 Windows exe 资产。"""
+    if not download_url:
+        return False
+
+    path = urlparse(download_url).path.lower()
+    return path.endswith(".exe")
+
+
+def normalize_update_package_type(download_url, package_type=None):
+    """根据运行环境和下载地址兜底修正更新包类型。"""
+    if (
+        sys.platform == "win32"
+        and getattr(sys, "frozen", False)
+        and _is_windows_exe_url(download_url)
+    ):
+        return PACKAGE_WINDOWS_EXE
+
+    if package_type:
+        return package_type
+
+    return PACKAGE_SOURCE
 
 
 def get_system_proxies():
@@ -212,7 +237,7 @@ class UpdateDownloadThread(QThread):
         super().__init__()
         self.download_url = download_url
         self.version = version
-        self.package_type = package_type
+        self.package_type = normalize_update_package_type(download_url, package_type)
         self._is_cancelled = False
 
     def cancel(self):
@@ -279,6 +304,15 @@ class UpdateDownloadThread(QThread):
         temp_zip = os.path.join(temp_dir, "update.zip")
 
         if not self._download_file(temp_zip):
+            return
+
+        if not zipfile.is_zipfile(temp_zip):
+            if sys.platform == "win32" and self._looks_like_windows_exe(temp_zip):
+                self.package_type = PACKAGE_WINDOWS_EXE
+                self._install_windows_exe_update(temp_dir, downloaded_exe=temp_zip)
+                return
+
+            self.finished_signal.emit(False, tr("update.invalid_source_zip"))
             return
 
         self.progress_signal.emit(60, tr("update.extracting"))
@@ -360,23 +394,22 @@ class UpdateDownloadThread(QThread):
         self.progress_signal.emit(100, tr("update.complete"))
         self.finished_signal.emit(True, tr("update.success", version=self.version))
 
-    def _install_windows_exe_update(self, temp_dir):
+    def _install_windows_exe_update(self, temp_dir, downloaded_exe=None):
         """下载 Windows exe，并启动独立替换脚本等待当前进程退出后覆盖。"""
         if sys.platform != "win32" or not getattr(sys, "frozen", False):
             self.finished_signal.emit(False, tr("update.binary_update_unsupported"))
             return
 
         current_exe = os.path.abspath(sys.executable)
-        next_exe = os.path.join(temp_dir, f"Nuclei_GUI_v{self.version}.exe")
+        next_exe = downloaded_exe or os.path.join(temp_dir, f"Nuclei_GUI_v{self.version}.exe")
         script_path = os.path.join(temp_dir, "apply_update.ps1")
 
-        if not self._download_file(next_exe, 10, 90):
+        if downloaded_exe is None and not self._download_file(next_exe, 10, 90):
             return
 
-        with open(next_exe, "rb") as f:
-            if f.read(2) != b"MZ":
-                self.finished_signal.emit(False, tr("update.invalid_windows_exe"))
-                return
+        if not self._looks_like_windows_exe(next_exe):
+            self.finished_signal.emit(False, tr("update.invalid_windows_exe"))
+            return
 
         self.progress_signal.emit(92, tr("update.preparing_binary_replace"))
         self._write_windows_replace_script(script_path, next_exe, current_exe, os.getpid())
@@ -461,6 +494,14 @@ try {{
     def _quote_powershell_literal(self, value):
         """生成 PowerShell 单引号字面量。"""
         return "'" + str(value).replace("'", "''") + "'"
+
+    def _looks_like_windows_exe(self, path):
+        """通过 MZ 文件头判断是否为 Windows exe。"""
+        try:
+            with open(path, "rb") as f:
+                return f.read(2) == b"MZ"
+        except OSError:
+            return False
 
     def _merge_directory(self, src, dst, preserve_dirs):
         """合并目录，保留指定的子目录"""
