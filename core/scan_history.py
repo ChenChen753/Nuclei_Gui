@@ -60,12 +60,6 @@ class ScanHistory:
             for old_val, new_val in _status_migration.items():
                 cursor.execute("UPDATE scan_records SET status = ? WHERE status = ?", (new_val, old_val))
 
-            # 检查是否需要添加 template_path 字段（兼容旧数据库）
-            cursor.execute("PRAGMA table_info(vuln_results)")
-            v_columns = [col[1] for col in cursor.fetchall()]
-            if 'template_path' not in v_columns:
-                cursor.execute("ALTER TABLE vuln_results ADD COLUMN template_path TEXT")
-
             # 漏洞结果表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS vuln_results (
@@ -80,6 +74,12 @@ class ScanHistory:
                     FOREIGN KEY (scan_id) REFERENCES scan_records(id)
                 )
             ''')
+
+            # 检查是否需要添加 template_path 字段（兼容旧数据库）
+            cursor.execute("PRAGMA table_info(vuln_results)")
+            v_columns = [col[1] for col in cursor.fetchall()]
+            if 'template_path' not in v_columns:
+                cursor.execute("ALTER TABLE vuln_results ADD COLUMN template_path TEXT")
 
             conn.commit()
     

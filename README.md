@@ -10,7 +10,7 @@
 
 ## 项目信息
 
-- **版本**: 2.5.1
+- **版本**: 2.5.2
 - **作者**: 辰辰
 - **技术栈**: Python 3.x + PyQt5 + Nuclei
 - **运行平台**: Windows / macOS / Linux（完全跨平台支持）
@@ -124,6 +124,60 @@ dist/Nuclei_GUI_portable/
 
 程序图标会优先使用 `resources/icon.ico`；如果没有该文件，打包时会自动把 `resources/icon.png` 转成临时 `.ico` 并写入 exe。需要替换 exe 图标时，更新 `resources/icon.png` 后重新运行打包脚本即可。
 
+### macOS/Linux 本地打包
+
+PyInstaller 不是跨平台编译器，macOS 与 Linux 的可执行文件需要在对应系统上构建。项目提供一键脚本用于本地打包，但当前 Release 二进制资产只维护 Windows 版本。
+
+**macOS**：
+
+```bash
+bash build_package_macos.sh
+```
+
+打包完成后会生成：
+
+```text
+dist/Nuclei_GUI_macos_portable/
+  Nuclei_GUI.app
+  bin/
+    nuclei_darwin
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+如需 macOS 原生图标，可额外提供 `resources/icon.icns` 后重新打包。首次运行如遇 Gatekeeper 拦截，需要在系统安全设置中允许打开；正式分发可进一步做签名和 notarization。
+
+**Linux**：
+
+```bash
+bash build_package_linux.sh
+```
+
+打包完成后会生成：
+
+```text
+dist/Nuclei_GUI_linux_portable/
+  Nuclei_GUI
+  bin/
+    nuclei_linux
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+建议在较稳定的发行版环境中构建 Linux 包，例如 Ubuntu 20.04/22.04，以提高兼容性。两个脚本都支持 `--skip-install`、`--skip-build`、`--no-archive` 参数。
+
+### Release 发布策略
+
+- Windows：上传 `Nuclei_GUI*.exe`，例如 `Nuclei_GUI_v2.5.2.exe` 或 `Nuclei_GUI_windows_x64_v2.5.2.exe`；当前二进制更新策略仅面向 Windows exe。
+- 源码运行：程序会使用 GitHub Release 自动生成的源码 zip 包进行更新，不需要额外上传源码 zip。
+- Windows exe 运行：程序会自动识别 PyInstaller 打包状态，只下载匹配的 `Nuclei_GUI*.exe`，下载完成后关闭当前程序、替换 exe 并自动重新启动。
+- macOS/Linux：仓库只提供一键打包脚本，不上传官方二进制文件；需要时在对应系统本地执行脚本构建。
+- `bin/nuclei.exe`、`bin/nuclei_darwin`、`bin/nuclei_linux` 为第三方工具文件，不提交到仓库。
+
 ## 目录结构
 
 ```
@@ -133,6 +187,8 @@ dist/Nuclei_GUI_portable/
 ├── Nuclei_GUI.spec                  # PyInstaller 打包配置
 ├── build_package.ps1                # Windows 快速打包脚本
 ├── build_package.bat                # Windows 打包入口
+├── build_package_macos.sh           # macOS 一键打包脚本
+├── build_package_linux.sh           # Linux 一键打包脚本
 ├── Run_Nuclei_GUI.bat               # Windows 启动脚本
 ├── run_nuclei_gui.sh                # macOS/Linux 启动脚本
 │
@@ -283,6 +339,8 @@ dist/Nuclei_GUI_portable/
 - **启动时自动检查**: 可在设置中开启/关闭
 - **手动检查更新**: 在设置页面点击"检查更新"按钮
 - **一键下载更新**: 发现新版本后可直接下载安装
+- **运行方式识别**: 源码运行时下载源码更新包；Windows exe 运行时下载 Release 中的新版 `Nuclei_GUI*.exe`
+- **二进制更新范围**: 当前二进制更新仅面向 Windows exe；macOS/Linux 建议使用源码更新或在目标系统重新执行打包脚本
 - **数据保留**: 更新时自动保留以下数据：
   - 扫描历史数据库 (scan_history.db, history.db)
   - 自定义 POC (poc_library/custom, poc_library/user_generated)
@@ -456,7 +514,12 @@ socks5://127.0.0.1:1080
 
 ## 更新日志
 
-### v2.5.1 (当前版本)
+### v2.5.2 (当前版本)
+- ✅ **跨系统打包脚本**：新增 macOS/Linux 本地一键打包脚本
+- ✅ **更新识别优化**：源码运行下载源码更新包，Windows exe 运行下载新版 exe 并自动替换重启
+- ✅ **首次运行修复**：修复二进制程序首次运行时扫描历史数据库迁移顺序导致的启动异常
+
+### v2.5.1
 - ✅ **便携打包优化**：构建时自动从 `resources/icon.png` 生成 Windows exe 图标，并完善打包说明
 - ✅ **导出弹窗双语修复**：修复中文界面扫描历史导出报告成功弹窗中的英文文案和按钮
 

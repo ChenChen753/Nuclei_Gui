@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QGroupBox, QGridLayout, QMessageBox, QListWidget,
     QListWidgetItem, QFormLayout, QTextEdit, QProgressBar
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QCoreApplication
 from PyQt5.QtGui import QFont
 
 import sys
@@ -20,7 +20,8 @@ from core.ui_scale import scaled, scaled_style
 from core.settings_manager import get_settings
 from core.updater import (
     UpdateCheckThread, UpdateDownloadThread,
-    get_current_version, PRESERVE_FILES, PRESERVE_DIRS
+    get_current_version, PRESERVE_FILES, PRESERVE_DIRS,
+    PACKAGE_WINDOWS_EXE
 )
 
 
@@ -530,6 +531,7 @@ class SettingsDialog(QDialog):
         # 存储下载信息
         self._update_download_url = None
         self._update_version = None
+        self._update_package_type = None
 
     def check_for_updates(self):
         """检查更新"""
@@ -543,10 +545,11 @@ class SettingsDialog(QDialog):
         self.update_check_thread.error_signal.connect(self.on_check_error)
         self.update_check_thread.start()
 
-    def on_check_finished(self, has_update, latest_version, download_url, release_notes):
+    def on_check_finished(self, has_update, latest_version, download_url, release_notes, package_type):
         """检查更新完成"""
         self.check_update_btn.setEnabled(True)
         self.latest_version_label.setText(f"v{latest_version}")
+        self._update_package_type = package_type
 
         if has_update:
             self.latest_version_label.setStyleSheet(scaled_style("color: #27ae60; font-weight: bold;"))
@@ -558,6 +561,8 @@ class SettingsDialog(QDialog):
             self.latest_version_label.setStyleSheet(scaled_style("color: #7f8c8d;"))
             self.update_status_label.setText(tr("settings.update.already_latest"))
             self.do_update_btn.setEnabled(False)
+            self._update_download_url = None
+            self._update_version = None
 
         self.release_notes_text.setText(release_notes if release_notes else tr("settings.update.no_release_notes"))
 
@@ -567,6 +572,10 @@ class SettingsDialog(QDialog):
         self.latest_version_label.setText(tr("settings.update.check_failed"))
         self.latest_version_label.setStyleSheet(scaled_style("color: #e74c3c;"))
         self.update_status_label.setText(error_msg)
+        self.do_update_btn.setEnabled(False)
+        self._update_download_url = None
+        self._update_version = None
+        self._update_package_type = None
 
     def do_update(self):
         """执行更新"""
@@ -574,9 +583,15 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, tr("msg.warning"), tr("settings.update.no_download_url"))
             return
 
+        confirm_body_key = (
+            "settings.update.confirm_body_binary"
+            if self._update_package_type == PACKAGE_WINDOWS_EXE
+            else "settings.update.confirm_body"
+        )
+
         reply = QMessageBox.question(
             self, tr("settings.update.confirm_title"),
-            tr("settings.update.confirm_body", version=self._update_version),
+            tr(confirm_body_key, version=self._update_version),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -591,7 +606,8 @@ class SettingsDialog(QDialog):
 
         self.update_download_thread = UpdateDownloadThread(
             self._update_download_url,
-            self._update_version
+            self._update_version,
+            self._update_package_type
         )
         self.update_download_thread.progress_signal.connect(self.on_update_progress)
         self.update_download_thread.finished_signal.connect(self.on_update_finished)
@@ -608,6 +624,13 @@ class SettingsDialog(QDialog):
         self.update_progress_bar.setVisible(False)
 
         if success:
+            if self._update_package_type == PACKAGE_WINDOWS_EXE:
+                QMessageBox.information(self, tr("settings.update.success_title"), message)
+                self.update_status_label.setText(tr("settings.update.binary_closing"))
+                self.do_update_btn.setEnabled(False)
+                QTimer.singleShot(500, self.quit_for_binary_update)
+                return
+
             QMessageBox.information(self, tr("settings.update.success_title"), message)
             self.update_status_label.setText(tr("settings.update.complete_restart"))
             # 询问是否立即重启
@@ -636,3 +659,8 @@ class SettingsDialog(QDialog):
             "main.py"
         )
         os.execl(python, python, script)
+
+    def quit_for_binary_update(self):
+        """关闭应用，交给外部替换脚本完成 exe 更新。"""
+        self.accept()
+        QCoreApplication.quit()

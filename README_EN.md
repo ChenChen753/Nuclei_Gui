@@ -6,7 +6,7 @@ A PyQt5-based graphical interface for Nuclei. It provides POC management, asset 
 
 ## Project Info
 
-- **Version**: 2.5.1
+- **Version**: 2.5.2
 - **Author**: 辰辰
 - **Tech Stack**: Python 3.x + PyQt5 + Nuclei
 - **Platforms**: Windows / macOS / Linux
@@ -70,6 +70,60 @@ Python modules, `i18n/`, and `resources/` are bundled into the executable. `bin/
 
 The executable icon uses `resources/icon.ico` first. If it does not exist, the build automatically converts `resources/icon.png` to a temporary `.ico` file and embeds it into the exe. To change the exe icon, replace `resources/icon.png` and rebuild.
 
+### macOS/Linux Local Packaging
+
+PyInstaller is not a cross-compiler. Build macOS and Linux executables on the corresponding operating system. The project provides one-click local packaging scripts, while official binary release assets are maintained for Windows only.
+
+**macOS**:
+
+```bash
+bash build_package_macos.sh
+```
+
+Output:
+
+```text
+dist/Nuclei_GUI_macos_portable/
+  Nuclei_GUI.app
+  bin/
+    nuclei_darwin
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+To use a native macOS icon, add `resources/icon.icns` before packaging. For public distribution, macOS signing and notarization are recommended.
+
+**Linux**:
+
+```bash
+bash build_package_linux.sh
+```
+
+Output:
+
+```text
+dist/Nuclei_GUI_linux_portable/
+  Nuclei_GUI
+  bin/
+    nuclei_linux
+  poc_library/
+    custom/
+    cloud/
+    user_generated/
+```
+
+For better Linux compatibility, build on a stable distribution such as Ubuntu 20.04 or 22.04. Both scripts support `--skip-install`, `--skip-build`, and `--no-archive`.
+
+### Release Asset Policy
+
+- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.2.exe` or `Nuclei_GUI_windows_x64_v2.5.2.exe`. Binary update support is currently limited to the Windows exe build.
+- Source runs: the updater uses GitHub's generated source zip for source-code updates, so no extra source zip asset is required.
+- Windows exe runs: the updater detects the PyInstaller build, downloads the matching `Nuclei_GUI*.exe`, closes the current app, replaces the exe, and restarts automatically.
+- macOS/Linux: this repository provides local packaging scripts, but does not publish official binary assets for these systems.
+- `bin/nuclei.exe`, `bin/nuclei_darwin`, and `bin/nuclei_linux` are third-party tool binaries and should not be committed.
+
 ## Features
 
 - **Dashboard**: scan statistics, vulnerability distribution, history records, quick actions
@@ -121,6 +175,12 @@ You must not use this tool for:
 The author and contributors are not responsible for any misuse, abuse, unauthorized use, or direct or indirect damages caused by this tool. By downloading, installing, running, or redistributing this tool, you acknowledge that you understand and accept all risks and legal responsibilities.
 
 ## Changelog
+
+### v2.5.2
+
+- Added one-click local packaging scripts for macOS and Linux.
+- Improved update detection so source runs use the source zip, while Windows exe builds download, replace, and restart with the new exe.
+- Fixed first-run binary startup failures caused by scan history database migration order.
 
 ### v2.5.1
 

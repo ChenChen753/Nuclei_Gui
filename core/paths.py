@@ -13,7 +13,12 @@ def is_frozen() -> bool:
 
 def app_dir() -> Path:
     if is_frozen():
-        return Path(sys.executable).resolve().parent
+        executable = Path(sys.executable).resolve()
+        if sys.platform == "darwin":
+            for parent in executable.parents:
+                if parent.suffix == ".app":
+                    return parent.parent
+        return executable.parent
     return Path(__file__).resolve().parents[1]
 
 

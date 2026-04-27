@@ -46,6 +46,8 @@ Thumbs.db
 
 # Nuclei binary (用户需自行下载)
 bin/nuclei.exe
+bin/nuclei_darwin
+bin/nuclei_linux
 
 # User data
 # poc_library/cloud/

@@ -9,6 +9,7 @@ import json
 import shutil
 import zipfile
 import tempfile
+import subprocess
 import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -18,7 +19,11 @@ from core.paths import app_dir
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.1"
+CURRENT_VERSION = "2.5.2"
+
+PACKAGE_SOURCE = "source"
+PACKAGE_WINDOWS_EXE = "windows_exe"
+PACKAGE_UNSUPPORTED_BINARY = "unsupported_binary"
 
 # 更新时需要保留的文件/目录（不会被覆盖）
 PRESERVE_FILES = [
@@ -41,6 +46,35 @@ PRESERVE_DIRS = [
 def get_current_version():
     """获取当前版本号"""
     return CURRENT_VERSION
+
+
+def get_update_package_type():
+    """根据当前运行方式选择更新包类型。"""
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32":
+            return PACKAGE_WINDOWS_EXE
+        return PACKAGE_UNSUPPORTED_BINARY
+    return PACKAGE_SOURCE
+
+
+def _find_windows_exe_asset(assets):
+    """从 GitHub Release assets 中选择 Windows GUI exe。"""
+    preferred_names = ("nuclei_gui", "nuclei-gui", "nuclei gui", "nucleigui")
+
+    for asset in assets:
+        name = asset.get("name", "")
+        lower_name = name.lower()
+        if not lower_name.endswith(".exe"):
+            continue
+
+        url = asset.get("browser_download_url", "")
+        if not url:
+            continue
+
+        if any(keyword in lower_name for keyword in preferred_names):
+            return url
+
+    return ""
 
 
 def get_system_proxies():
@@ -110,7 +144,7 @@ def compare_versions(v1, v2):
 
 class UpdateCheckThread(QThread):
     """检查更新线程"""
-    check_finished = pyqtSignal(bool, str, str, str)  # has_update, latest_version, download_url, release_notes
+    check_finished = pyqtSignal(bool, str, str, str, str)  # has_update, latest_version, download_url, release_notes, package_type
     error_signal = pyqtSignal(str)
 
     def __init__(self, timeout=10):
@@ -134,25 +168,26 @@ class UpdateCheckThread(QThread):
                 latest_version = data.get('tag_name', '').lstrip('v')
                 release_notes = data.get('body', tr("update.no_release_notes"))
 
-                # 查找下载链接 (zip 源码包)
-                download_url = ""
+                package_type = get_update_package_type()
                 assets = data.get('assets', [])
 
-                # 优先查找 zip 资源
-                for asset in assets:
-                    if asset['name'].endswith('.zip'):
-                        download_url = asset['browser_download_url']
-                        break
-
-                # 如果没有 assets，使用源码 zip
-                if not download_url:
+                if package_type == PACKAGE_WINDOWS_EXE:
+                    download_url = _find_windows_exe_asset(assets)
+                elif package_type == PACKAGE_SOURCE:
                     download_url = data.get('zipball_url', '')
+                else:
+                    self.error_signal.emit(tr("update.binary_update_unsupported"))
+                    return
 
                 # 比较版本
                 current = get_current_version()
                 has_update = compare_versions(latest_version, current) > 0
 
-                self.check_finished.emit(has_update, latest_version, download_url, release_notes)
+                if has_update and not download_url:
+                    self.error_signal.emit(tr("update.no_compatible_asset"))
+                    return
+
+                self.check_finished.emit(has_update, latest_version, download_url, release_notes, package_type)
             elif response.status_code == 404:
                 self.error_signal.emit(tr("update.no_release_found"))
             elif response.status_code == 403:
@@ -173,10 +208,11 @@ class UpdateDownloadThread(QThread):
     progress_signal = pyqtSignal(int, str)  # percent, message
     finished_signal = pyqtSignal(bool, str)  # success, message
 
-    def __init__(self, download_url, version):
+    def __init__(self, download_url, version, package_type=PACKAGE_SOURCE):
         super().__init__()
         self.download_url = download_url
         self.version = version
+        self.package_type = package_type
         self._is_cancelled = False
 
     def cancel(self):
@@ -184,133 +220,16 @@ class UpdateDownloadThread(QThread):
 
     def run(self):
         temp_dir = None
-        temp_zip = None
 
         try:
-            project_root = str(app_dir())
-
             self.progress_signal.emit(5, tr("update.preparing_download"))
-
-            # 创建临时目录
             temp_dir = tempfile.mkdtemp(prefix="nuclei_gui_update_")
-            temp_zip = os.path.join(temp_dir, "update.zip")
 
-            # 下载文件
-            self.progress_signal.emit(10, tr("update.downloading"))
-
-            headers = {'User-Agent': 'Nuclei-GUI-Updater'}
-            proxies = get_system_proxies()
-            response = requests.get(self.download_url, headers=headers, stream=True, timeout=60, proxies=proxies)
-
-            if response.status_code != 200:
-                self.finished_signal.emit(False, tr("update.download_failed_http", code=response.status_code))
-                return
-
-            # 获取文件大小
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-
-            with open(temp_zip, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if self._is_cancelled:
-                        self.finished_signal.emit(False, tr("update.cancelled"))
-                        return
-
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-
-                        if total_size > 0:
-                            percent = int(10 + (downloaded / total_size) * 50)
-                            self.progress_signal.emit(percent, tr("update.downloading_progress", size=downloaded // 1024))
-
-            self.progress_signal.emit(60, tr("update.extracting"))
-
-            # 解压文件
-            extract_dir = os.path.join(temp_dir, "extracted")
-            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-
-            # 找到解压后的根目录
-            extracted_items = os.listdir(extract_dir)
-            if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_dir, extracted_items[0])):
-                source_dir = os.path.join(extract_dir, extracted_items[0])
+            if self.package_type == PACKAGE_WINDOWS_EXE:
+                self._install_windows_exe_update(temp_dir)
+                temp_dir = None
             else:
-                source_dir = extract_dir
-
-            self.progress_signal.emit(70, tr("update.backing_up"))
-
-            # 备份需要保留的文件
-            backup_dir = os.path.join(temp_dir, "backup")
-            os.makedirs(backup_dir, exist_ok=True)
-
-            for file in PRESERVE_FILES:
-                src = os.path.join(project_root, file)
-                if os.path.exists(src):
-                    dst = os.path.join(backup_dir, file)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copy2(src, dst)
-
-            for dir_path in PRESERVE_DIRS:
-                src = os.path.join(project_root, dir_path)
-                if os.path.exists(src):
-                    dst = os.path.join(backup_dir, dir_path)
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-            self.progress_signal.emit(80, tr("update.updating_files"))
-
-            # 复制新文件（排除保留的文件和目录）
-            for item in os.listdir(source_dir):
-                if self._is_cancelled:
-                    self.finished_signal.emit(False, tr("update.cancelled"))
-                    return
-
-                src = os.path.join(source_dir, item)
-                dst = os.path.join(project_root, item)
-
-                # 跳过保留的文件
-                if item in PRESERVE_FILES:
-                    continue
-
-                # 跳过保留的目录（但允许合并）
-                skip = False
-                for preserve_dir in PRESERVE_DIRS:
-                    if item == preserve_dir.split('/')[0]:
-                        # 对于 poc_library 这样的目录，需要特殊处理
-                        if os.path.isdir(src):
-                            self._merge_directory(src, dst, PRESERVE_DIRS)
-                            skip = True
-                            break
-
-                if skip:
-                    continue
-
-                # 复制文件或目录
-                if os.path.isdir(src):
-                    if os.path.exists(dst):
-                        shutil.rmtree(dst)
-                    shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
-
-            self.progress_signal.emit(90, tr("update.restoring_files"))
-
-            # 恢复保留的文件
-            for file in PRESERVE_FILES:
-                src = os.path.join(backup_dir, file)
-                if os.path.exists(src):
-                    dst = os.path.join(project_root, file)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copy2(src, dst)
-
-            for dir_path in PRESERVE_DIRS:
-                src = os.path.join(backup_dir, dir_path)
-                if os.path.exists(src):
-                    dst = os.path.join(project_root, dir_path)
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-            self.progress_signal.emit(100, tr("update.complete"))
-            self.finished_signal.emit(True, tr("update.success", version=self.version))
+                self._install_source_update(temp_dir)
 
         except Exception as e:
             self.finished_signal.emit(False, tr("update.failed", error=str(e)))
@@ -322,6 +241,220 @@ class UpdateDownloadThread(QThread):
                     shutil.rmtree(temp_dir)
                 except:
                     pass
+
+    def _download_file(self, target_path, start_percent=10, end_percent=60):
+        """下载更新文件到指定路径。"""
+        self.progress_signal.emit(start_percent, tr("update.downloading"))
+
+        headers = {'User-Agent': 'Nuclei-GUI-Updater'}
+        proxies = get_system_proxies()
+        response = requests.get(self.download_url, headers=headers, stream=True, timeout=60, proxies=proxies)
+
+        if response.status_code != 200:
+            self.finished_signal.emit(False, tr("update.download_failed_http", code=response.status_code))
+            return False
+
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+
+        with open(target_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if self._is_cancelled:
+                    self.finished_signal.emit(False, tr("update.cancelled"))
+                    return False
+
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if total_size > 0:
+                        percent = int(start_percent + (downloaded / total_size) * (end_percent - start_percent))
+                        self.progress_signal.emit(percent, tr("update.downloading_progress", size=downloaded // 1024))
+
+        return True
+
+    def _install_source_update(self, temp_dir):
+        """安装源码 zip 更新。"""
+        project_root = str(app_dir())
+        temp_zip = os.path.join(temp_dir, "update.zip")
+
+        if not self._download_file(temp_zip):
+            return
+
+        self.progress_signal.emit(60, tr("update.extracting"))
+
+        extract_dir = os.path.join(temp_dir, "extracted")
+        with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        extracted_items = os.listdir(extract_dir)
+        if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_dir, extracted_items[0])):
+            source_dir = os.path.join(extract_dir, extracted_items[0])
+        else:
+            source_dir = extract_dir
+
+        self.progress_signal.emit(70, tr("update.backing_up"))
+
+        backup_dir = os.path.join(temp_dir, "backup")
+        os.makedirs(backup_dir, exist_ok=True)
+
+        for file in PRESERVE_FILES:
+            src = os.path.join(project_root, file)
+            if os.path.exists(src):
+                dst = os.path.join(backup_dir, file)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+
+        for dir_path in PRESERVE_DIRS:
+            src = os.path.join(project_root, dir_path)
+            if os.path.exists(src):
+                dst = os.path.join(backup_dir, dir_path)
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+
+        self.progress_signal.emit(80, tr("update.updating_files"))
+
+        for item in os.listdir(source_dir):
+            if self._is_cancelled:
+                self.finished_signal.emit(False, tr("update.cancelled"))
+                return
+
+            src = os.path.join(source_dir, item)
+            dst = os.path.join(project_root, item)
+
+            if item in PRESERVE_FILES:
+                continue
+
+            skip = False
+            for preserve_dir in PRESERVE_DIRS:
+                if item == preserve_dir.split('/')[0]:
+                    if os.path.isdir(src):
+                        self._merge_directory(src, dst, PRESERVE_DIRS)
+                        skip = True
+                        break
+
+            if skip:
+                continue
+
+            if os.path.isdir(src):
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+
+        self.progress_signal.emit(90, tr("update.restoring_files"))
+
+        for file in PRESERVE_FILES:
+            src = os.path.join(backup_dir, file)
+            if os.path.exists(src):
+                dst = os.path.join(project_root, file)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+
+        for dir_path in PRESERVE_DIRS:
+            src = os.path.join(backup_dir, dir_path)
+            if os.path.exists(src):
+                dst = os.path.join(project_root, dir_path)
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+
+        self.progress_signal.emit(100, tr("update.complete"))
+        self.finished_signal.emit(True, tr("update.success", version=self.version))
+
+    def _install_windows_exe_update(self, temp_dir):
+        """下载 Windows exe，并启动独立替换脚本等待当前进程退出后覆盖。"""
+        if sys.platform != "win32" or not getattr(sys, "frozen", False):
+            self.finished_signal.emit(False, tr("update.binary_update_unsupported"))
+            return
+
+        current_exe = os.path.abspath(sys.executable)
+        next_exe = os.path.join(temp_dir, f"Nuclei_GUI_v{self.version}.exe")
+        script_path = os.path.join(temp_dir, "apply_update.ps1")
+
+        if not self._download_file(next_exe, 10, 90):
+            return
+
+        with open(next_exe, "rb") as f:
+            if f.read(2) != b"MZ":
+                self.finished_signal.emit(False, tr("update.invalid_windows_exe"))
+                return
+
+        self.progress_signal.emit(92, tr("update.preparing_binary_replace"))
+        self._write_windows_replace_script(script_path, next_exe, current_exe, os.getpid())
+
+        creation_flags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creation_flags |= subprocess.CREATE_NO_WINDOW
+        if hasattr(subprocess, "DETACHED_PROCESS"):
+            creation_flags |= subprocess.DETACHED_PROCESS
+
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script_path,
+            ],
+            close_fds=True,
+            creationflags=creation_flags,
+            cwd=temp_dir,
+        )
+
+        self.progress_signal.emit(100, tr("update.complete"))
+        self.finished_signal.emit(True, tr("update.binary_ready", version=self.version))
+
+    def _write_windows_replace_script(self, script_path, source_exe, target_exe, pid):
+        """写入 Windows exe 替换脚本。"""
+        temp_dir = os.path.dirname(script_path)
+        script = f"""$ErrorActionPreference = "SilentlyContinue"
+$src = {self._quote_powershell_literal(source_exe)}
+$dst = {self._quote_powershell_literal(target_exe)}
+$tempDir = {self._quote_powershell_literal(temp_dir)}
+$pidToWait = {pid}
+$logPath = Join-Path $tempDir "update.log"
+
+try {{
+    Wait-Process -Id $pidToWait -Timeout 120 -ErrorAction SilentlyContinue
+}} catch {{}}
+
+$replaced = $false
+for ($i = 0; $i -lt 30; $i++) {{
+    try {{
+        Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+        $replaced = $true
+        break
+    }} catch {{
+        Start-Sleep -Seconds 1
+    }}
+}}
+
+if (-not $replaced) {{
+    try {{
+        Set-Content -LiteralPath $logPath -Value "Failed to replace $dst" -Encoding UTF8
+    }} catch {{}}
+    exit 1
+}}
+
+try {{
+    Start-Process -FilePath $dst
+}} catch {{}}
+
+try {{
+    Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue
+}} catch {{}}
+
+Start-Sleep -Milliseconds 500
+try {{
+    Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+}} catch {{}}
+"""
+        with open(script_path, "w", encoding="utf-8-sig", newline="\r\n") as f:
+            f.write(script)
+
+    def _quote_powershell_literal(self, value):
+        """生成 PowerShell 单引号字面量。"""
+        return "'" + str(value).replace("'", "''") + "'"
 
     def _merge_directory(self, src, dst, preserve_dirs):
         """合并目录，保留指定的子目录"""
