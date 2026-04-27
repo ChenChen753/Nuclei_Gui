@@ -15,12 +15,12 @@ import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from i18n import tr
-from core.paths import app_dir
+from core.paths import app_dir, log_dir, user_data_dir
 
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.4"
+CURRENT_VERSION = "2.5.5"
 
 PACKAGE_SOURCE = "source"
 PACKAGE_WINDOWS_EXE = "windows_exe"
@@ -252,7 +252,6 @@ class UpdateDownloadThread(QThread):
 
             if self.package_type == PACKAGE_WINDOWS_EXE:
                 self._install_windows_exe_update(temp_dir)
-                temp_dir = None
             else:
                 self._install_source_update(temp_dir)
 
@@ -401,92 +400,184 @@ class UpdateDownloadThread(QThread):
             return
 
         current_exe = os.path.abspath(sys.executable)
-        next_exe = downloaded_exe or os.path.join(temp_dir, f"Nuclei_GUI_v{self.version}.exe")
-        script_path = os.path.join(temp_dir, "apply_update.ps1")
+        update_root = user_data_dir().joinpath("pending_update")
+        update_root.mkdir(parents=True, exist_ok=True)
+        safe_version = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(self.version))
+        work_dir = tempfile.mkdtemp(prefix=f"v{safe_version}_", dir=str(update_root))
+        next_exe = os.path.join(work_dir, f"Nuclei_GUI_v{self.version}.exe")
+        script_path = os.path.join(work_dir, "apply_update.ps1")
+        log_path = str(log_dir().joinpath("update_apply.log"))
 
         if downloaded_exe is None and not self._download_file(next_exe, 10, 90):
             return
+        if downloaded_exe is not None:
+            shutil.copy2(downloaded_exe, next_exe)
 
         if not self._looks_like_windows_exe(next_exe):
             self.finished_signal.emit(False, tr("update.invalid_windows_exe"))
             return
 
         self.progress_signal.emit(92, tr("update.preparing_binary_replace"))
-        self._write_windows_replace_script(script_path, next_exe, current_exe, os.getpid())
+        self._write_windows_replace_script(script_path, next_exe, current_exe, os.getpid(), log_path)
 
         creation_flags = 0
         if hasattr(subprocess, "CREATE_NO_WINDOW"):
             creation_flags |= subprocess.CREATE_NO_WINDOW
-        if hasattr(subprocess, "DETACHED_PROCESS"):
-            creation_flags |= subprocess.DETACHED_PROCESS
-
         env = os.environ.copy()
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
 
         subprocess.Popen(
             [
+                "cmd.exe",
+                "/c",
+                "start",
+                "",
                 "powershell.exe",
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
+                "-WindowStyle",
+                "Hidden",
                 "-File",
                 script_path,
             ],
             close_fds=True,
             creationflags=creation_flags,
-            cwd=temp_dir,
+            cwd=work_dir,
             env=env,
         )
 
         self.progress_signal.emit(100, tr("update.complete"))
         self.finished_signal.emit(True, tr("update.binary_ready", version=self.version))
 
-    def _write_windows_replace_script(self, script_path, source_exe, target_exe, pid):
+    def _write_windows_replace_script(self, script_path, source_exe, target_exe, pid, log_path):
         """写入 Windows exe 替换脚本。"""
         temp_dir = os.path.dirname(script_path)
-        script = f"""$ErrorActionPreference = "SilentlyContinue"
+        script = f"""$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 $src = {self._quote_powershell_literal(source_exe)}
 $dst = {self._quote_powershell_literal(target_exe)}
 $tempDir = {self._quote_powershell_literal(temp_dir)}
 $workDir = Split-Path -Parent $dst
 $pidToWait = {pid}
-$logPath = Join-Path $tempDir "update.log"
+$logPath = {self._quote_powershell_literal(log_path)}
+$backupPath = "$dst.old"
 $env:PYINSTALLER_RESET_ENVIRONMENT = "1"
 
+function Write-UpdateLog {{
+    param([string]$Message)
+    try {{
+        $logDir = Split-Path -Parent $logPath
+        if (-not (Test-Path -LiteralPath $logDir)) {{
+            New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        }}
+        $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+        Add-Content -LiteralPath $logPath -Value "[$stamp] $Message" -Encoding UTF8
+    }} catch {{}}
+}}
+
+function Get-FileSha256 {{
+    param([string]$Path)
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+}}
+
+Write-UpdateLog "Updater started. Source=$src Target=$dst Pid=$pidToWait"
+
 try {{
-    Wait-Process -Id $pidToWait -Timeout 120 -ErrorAction SilentlyContinue
-}} catch {{}}
+    $process = Get-Process -Id $pidToWait -ErrorAction SilentlyContinue
+    if ($process) {{
+        Write-UpdateLog "Waiting for process $pidToWait to exit"
+        Wait-Process -Id $pidToWait -Timeout 180 -ErrorAction Stop
+    }} else {{
+        Write-UpdateLog "Process $pidToWait is already closed"
+    }}
+}} catch {{
+    Write-UpdateLog "Wait-Process warning: $($_.Exception.Message)"
+}}
+
+try {{
+    if (-not (Test-Path -LiteralPath $src)) {{
+        throw "Source exe does not exist: $src"
+    }}
+    if (-not (Test-Path -LiteralPath $workDir)) {{
+        New-Item -ItemType Directory -Force -Path $workDir | Out-Null
+    }}
+    $sourceHash = Get-FileSha256 $src
+    $sourceSize = (Get-Item -LiteralPath $src).Length
+    Write-UpdateLog "Source ready. Size=$sourceSize SHA256=$sourceHash"
+}} catch {{
+    Write-UpdateLog "Source validation failed: $($_.Exception.Message)"
+    exit 1
+}}
 
 $replaced = $false
-for ($i = 0; $i -lt 30; $i++) {{
+$lastError = ""
+for ($i = 1; $i -le 90; $i++) {{
+    $movedOld = $false
     try {{
+        if (Test-Path -LiteralPath $backupPath) {{
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+        }}
+        if (Test-Path -LiteralPath $dst) {{
+            Move-Item -LiteralPath $dst -Destination $backupPath -Force -ErrorAction Stop
+            $movedOld = $true
+        }}
         Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+        $targetHash = Get-FileSha256 $dst
+        $targetSize = (Get-Item -LiteralPath $dst).Length
+        if ($targetHash -ne $sourceHash -or $targetSize -ne $sourceSize) {{
+            throw "Verification failed. TargetSize=$targetSize TargetSHA256=$targetHash"
+        }}
         $replaced = $true
+        Write-UpdateLog "Replacement succeeded on attempt $i"
         break
     }} catch {{
+        $lastError = $_.Exception.Message
+        Write-UpdateLog "Replacement attempt $i failed: $lastError"
+        if ($movedOld -and -not (Test-Path -LiteralPath $dst) -and (Test-Path -LiteralPath $backupPath)) {{
+            try {{
+                Move-Item -LiteralPath $backupPath -Destination $dst -Force -ErrorAction Stop
+                Write-UpdateLog "Restored backup after failed attempt $i"
+            }} catch {{
+                Write-UpdateLog "Backup restore failed: $($_.Exception.Message)"
+            }}
+        }}
         Start-Sleep -Seconds 1
     }}
 }}
 
 if (-not $replaced) {{
-    try {{
-        Set-Content -LiteralPath $logPath -Value "Failed to replace $dst" -Encoding UTF8
-    }} catch {{}}
+    Write-UpdateLog "Failed to replace $dst. LastError=$lastError"
     exit 1
 }}
 
 try {{
-    Start-Process -FilePath $dst -WorkingDirectory $workDir
-}} catch {{}}
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $dst
+    $psi.WorkingDirectory = $workDir
+    $psi.UseShellExecute = $false
+    $psi.EnvironmentVariables["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    [System.Diagnostics.Process]::Start($psi) | Out-Null
+    Write-UpdateLog "Restarted updated executable"
+}} catch {{
+    Write-UpdateLog "Failed to restart updated executable: $($_.Exception.Message)"
+}}
 
 try {{
     Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue
-}} catch {{}}
+}} catch {{
+    Write-UpdateLog "Failed to remove downloaded exe: $($_.Exception.Message)"
+}}
 
-Start-Sleep -Milliseconds 500
 try {{
-    Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-}} catch {{}}
+    if (Test-Path -LiteralPath $backupPath) {{
+        Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+    }}
+}} catch {{
+    Write-UpdateLog "Failed to remove backup exe: $($_.Exception.Message)"
+}}
+
+Write-UpdateLog "Updater finished"
 """
         with open(script_path, "w", encoding="utf-8-sig", newline="\r\n") as f:
             f.write(script)
