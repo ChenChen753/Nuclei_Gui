@@ -10,7 +10,7 @@
 
 ## 项目信息
 
-- **版本**: 2.5.2
+- **版本**: 2.5.3
 - **作者**: 辰辰
 - **技术栈**: Python 3.x + PyQt5 + Nuclei
 - **运行平台**: Windows / macOS / Linux（完全跨平台支持）
@@ -172,7 +172,7 @@ dist/Nuclei_GUI_linux_portable/
 
 ### Release 发布策略
 
-- Windows：上传 `Nuclei_GUI*.exe`，例如 `Nuclei_GUI_v2.5.2.exe` 或 `Nuclei_GUI_windows_x64_v2.5.2.exe`；当前二进制更新策略仅面向 Windows exe。
+- Windows：上传 `Nuclei_GUI*.exe`，例如 `Nuclei_GUI_v2.5.3.exe` 或 `Nuclei_GUI_windows_x64_v2.5.3.exe`；当前二进制更新策略仅面向 Windows exe。
 - 源码运行：程序会使用 GitHub Release 自动生成的源码 zip 包进行更新，不需要额外上传源码 zip。
 - Windows exe 运行：程序会自动识别 PyInstaller 打包状态，只下载匹配的 `Nuclei_GUI*.exe`，下载完成后关闭当前程序、替换 exe 并自动重新启动。
 - macOS/Linux：仓库只提供一键打包脚本，不上传官方二进制文件；需要时在对应系统本地执行脚本构建。
@@ -514,7 +514,10 @@ socks5://127.0.0.1:1080
 
 ## 更新日志
 
-### v2.5.2 (当前版本)
+### v2.5.3 (当前版本)
+- ✅ **Windows exe 自更新修复**：修复 PyInstaller onefile 更新后重启时复用旧 `_MEI` 临时目录导致 `base_library.zip` 丢失的问题
+
+### v2.5.2
 - ✅ **跨系统打包脚本**：新增 macOS/Linux 本地一键打包脚本
 - ✅ **更新识别优化**：源码运行下载源码更新包，Windows exe 运行下载新版 exe 并自动替换重启
 - ✅ **首次运行修复**：修复二进制程序首次运行时扫描历史数据库迁移顺序导致的启动异常

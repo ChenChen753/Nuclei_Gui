@@ -19,7 +19,7 @@ from core.paths import app_dir
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.2"
+CURRENT_VERSION = "2.5.3"
 
 PACKAGE_SOURCE = "source"
 PACKAGE_WINDOWS_EXE = "windows_exe"
@@ -387,6 +387,9 @@ class UpdateDownloadThread(QThread):
         if hasattr(subprocess, "DETACHED_PROCESS"):
             creation_flags |= subprocess.DETACHED_PROCESS
 
+        env = os.environ.copy()
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+
         subprocess.Popen(
             [
                 "powershell.exe",
@@ -399,6 +402,7 @@ class UpdateDownloadThread(QThread):
             close_fds=True,
             creationflags=creation_flags,
             cwd=temp_dir,
+            env=env,
         )
 
         self.progress_signal.emit(100, tr("update.complete"))
@@ -411,8 +415,10 @@ class UpdateDownloadThread(QThread):
 $src = {self._quote_powershell_literal(source_exe)}
 $dst = {self._quote_powershell_literal(target_exe)}
 $tempDir = {self._quote_powershell_literal(temp_dir)}
+$workDir = Split-Path -Parent $dst
 $pidToWait = {pid}
 $logPath = Join-Path $tempDir "update.log"
+$env:PYINSTALLER_RESET_ENVIRONMENT = "1"
 
 try {{
     Wait-Process -Id $pidToWait -Timeout 120 -ErrorAction SilentlyContinue
@@ -437,7 +443,7 @@ if (-not $replaced) {{
 }}
 
 try {{
-    Start-Process -FilePath $dst
+    Start-Process -FilePath $dst -WorkingDirectory $workDir
 }} catch {{}}
 
 try {{
