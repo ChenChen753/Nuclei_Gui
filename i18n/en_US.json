@@ -348,6 +348,7 @@
   "poc.open_folder": "Open Folder",
   "poc.search_placeholder": "Search POC ID/name/CVE...",
   "poc.filter_source": "Source:",
+  "poc.source_root_folder": "Root",
   "poc.source_user": "User",
   "poc.source_cloud": "Cloud",
   "poc.source_local": "Local",

@@ -832,6 +832,7 @@
   "poc.open_folder": "打开目录",
   "poc.search_placeholder": "搜索 POC ID/名称/CVE编号/关键词...",
   "poc.filter_source": "来源:",
+  "poc.source_root_folder": "根目录",
   "poc.source_user": "用户生成",
   "poc.source_cloud": "云端同步",
   "poc.source_local": "本地导入",

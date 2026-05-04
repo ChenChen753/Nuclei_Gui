@@ -1,10 +1,10 @@
+import json
 import shutil
 from pathlib import Path
 import yaml
-import time
 
 from i18n import tr
-from core.paths import ensure_external_layout, external_path
+from core.paths import ensure_external_layout, external_path, user_data_path
 
 class POCLibrary:
     """POC 库管理器 - 负责 POC 的导入、存储和读取"""
@@ -33,25 +33,132 @@ class POCLibrary:
         # POC 缓存
         self._poc_cache = None
         self._cache_valid = False
+        self._cache_file = user_data_path("cache", "poc_index.json")
     
     def get_poc_count(self) -> int:
         """快速获取 POC 数量（不解析内容，仅计数文件）"""
-        count = 0
-
-        # 扫描各目录的 yaml/yml 文件数量（合并遍历）
-        for dir_path in [self.custom_path, self.cloud_path, self.user_generated_path]:
-            if dir_path.exists():
-                count += sum(1 for f in dir_path.rglob("*") if f.suffix in ('.yaml', '.yml'))
-
-        # 兼容旧版：扫描根目录
-        count += len(list(self.library_path.glob("*.yaml")))
-
-        return count
+        return sum(1 for _ in self._iter_poc_files())
     
     def invalidate_cache(self):
         """使缓存失效"""
         self._cache_valid = False
         self._poc_cache = None
+
+    def _iter_poc_files(self):
+        """遍历全部 POC 文件并返回来源标记"""
+        seen = set()
+        if not self.library_path.exists():
+            return
+
+        for file in self.library_path.rglob("*"):
+            if not file.is_file() or file.suffix.lower() not in (".yaml", ".yml"):
+                continue
+
+            cache_key = str(file.resolve())
+            if cache_key in seen:
+                continue
+
+            seen.add(cache_key)
+            yield file, self._get_source_for_path(file)
+
+    def _get_source_for_path(self, path: Path) -> str:
+        """根据 POC 路径返回兼容旧逻辑的来源标记"""
+        try:
+            relative = path.resolve().relative_to(self.library_path.resolve())
+        except ValueError:
+            return "custom"
+
+        if len(relative.parts) <= 1:
+            return "legacy"
+
+        top_folder = relative.parts[0]
+        if top_folder == "cloud":
+            return "cloud"
+        if top_folder in ("custom", "user_generated"):
+            return "custom"
+        return "folder"
+
+    def _get_folder_metadata(self, path: Path) -> tuple:
+        """返回用于 UI 筛选的文件夹分类信息"""
+        try:
+            folder = path.resolve().parent.relative_to(self.library_path.resolve())
+        except ValueError:
+            folder = Path(path.parent.name)
+
+        if str(folder) in ("", "."):
+            return "__root__", ""
+
+        folder_key = folder.as_posix()
+        return folder_key, folder_key
+
+    def get_folder_options(self) -> list:
+        """Return top-level POC folders for source filters, including empty custom folders."""
+        if not self.library_path.exists():
+            return []
+
+        folders = {}
+        for folder in self.library_path.iterdir():
+            if folder.is_dir():
+                folder_key = folder.name
+                folders[folder_key] = folder_key
+
+        return sorted(folders.items(), key=lambda item: item[0].lower())
+
+    def _add_folder_metadata(self, info: dict, path: Path) -> dict:
+        folder_key, folder_label = self._get_folder_metadata(path)
+        info["folder_key"] = folder_key
+        info["folder_label"] = folder_label
+        return info
+
+    def _load_persistent_cache(self) -> dict:
+        """加载磁盘缓存"""
+        if not self._cache_file.exists():
+            return {}
+
+        try:
+            with open(self._cache_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if not isinstance(payload, dict):
+                return {}
+            if payload.get("version") != 2:
+                return {}
+            entries = payload.get("entries", {})
+            return entries if isinstance(entries, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_persistent_cache(self, entries: dict):
+        """保存磁盘缓存"""
+        payload = {
+            "version": 2,
+            "entries": entries,
+        }
+        try:
+            with open(self._cache_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _serialize_poc_info(self, poc: dict, path: Path, source: str, stat_result) -> dict:
+        """序列化 POC 信息用于磁盘缓存"""
+        return {
+            "mtime_ns": stat_result.st_mtime_ns,
+            "size": stat_result.st_size,
+            "source": source,
+            "info": {
+                "id": poc.get("id", "unknown"),
+                "name": poc.get("name", tr("poc.unnamed")),
+                "author": poc.get("author", tr("poc.unknown")),
+                "severity": poc.get("severity", "unknown"),
+                "description": poc.get("description", ""),
+                "tags": poc.get("tags", ""),
+                "filename": path.name,
+                "path": str(path.absolute()),
+                "source": source,
+                "folder_key": poc.get("folder_key", "__root__"),
+                "folder_label": poc.get("folder_label", ""),
+            },
+        }
     
     def import_poc(self, source_file: str, auto_sync: bool = True) -> dict:
         """
@@ -112,33 +219,43 @@ class POCLibrary:
         if use_cache and self._cache_valid and self._poc_cache is not None:
             return self._poc_cache
 
+        disk_cache = self._load_persistent_cache()
+        next_cache = {}
         pocs = []
 
-        # 定义要扫描的目录及其来源标识
-        scan_dirs = [
-            (self.custom_path, "custom"),
-            (self.cloud_path, "cloud"),
-            (self.user_generated_path, "custom"),  # 显示为用户来源
-        ]
+        for file, source in self._iter_poc_files():
+            try:
+                stat_result = file.stat()
+            except OSError:
+                continue
 
-        # 扫描各目录（合并 .yaml 和 .yml 遍历）
-        for dir_path, source in scan_dirs:
-            if dir_path.exists():
-                for file in dir_path.rglob("*"):
-                    if file.suffix in ('.yaml', '.yml'):
-                        info = self._parse_poc(file)
-                        if info:
-                            info["path"] = str(file.absolute())
-                            info["source"] = source
-                            pocs.append(info)
+            cache_key = str(file.resolve())
+            cache_entry = disk_cache.get(cache_key)
 
-        # 兼容旧版：扫描根目录
-        for file in self.library_path.glob("*.yaml"):
+            if (
+                isinstance(cache_entry, dict)
+                and cache_entry.get("mtime_ns") == stat_result.st_mtime_ns
+                and cache_entry.get("size") == stat_result.st_size
+            ):
+                info = cache_entry.get("info")
+                if isinstance(info, dict):
+                    self._add_folder_metadata(info, file)
+                    next_cache[cache_key] = cache_entry
+                    pocs.append(info)
+                    continue
+
             info = self._parse_poc(file)
-            if info:
-                info["path"] = str(file.absolute())
-                info["source"] = "legacy"
-                pocs.append(info)
+            if not info:
+                continue
+
+            info["path"] = str(file.absolute())
+            info["source"] = source
+            self._add_folder_metadata(info, file)
+            pocs.append(info)
+            next_cache[cache_key] = self._serialize_poc_info(info, file, source, stat_result)
+
+        pocs.sort(key=lambda item: (item.get("id", ""), item.get("name", "")))
+        self._save_persistent_cache(next_cache)
 
         # 更新缓存
         self._poc_cache = pocs

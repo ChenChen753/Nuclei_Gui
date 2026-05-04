@@ -6,7 +6,7 @@ A PyQt5-based graphical interface for Nuclei. It provides POC management, asset 
 
 ## Project Info
 
-- **Version**: 2.5.5
+- **Version**: 2.5.6
 - **Author**: 辰辰
 - **Tech Stack**: Python 3.x + PyQt5 + Nuclei
 - **Platforms**: Windows / macOS / Linux
@@ -68,6 +68,8 @@ dist/Nuclei_GUI_portable/
 
 Python modules, `i18n/`, and `resources/` are bundled into the executable. `bin/` and `poc_library/` stay beside the executable so Nuclei and POCs can be updated independently. Logs and SQLite databases are stored in the user data directory, such as `%APPDATA%/NucleiGUI/` on Windows.
 
+The packaging scripts sync the external runtime layout to both `dist/` and `dist/Nuclei_GUI_portable/`. If you test `dist/Nuclei_GUI.exe` directly, it reads `dist/poc_library/`; for distribution, use the full `dist/Nuclei_GUI_portable/` folder. User-created top-level folders under `poc_library/` are copied into the package, and selecting a parent source folder recursively shows POCs in its subfolders.
+
 The executable icon uses `resources/icon.ico` first. If it does not exist, the build automatically converts `resources/icon.png` to a temporary `.ico` file and embeds it into the exe. To change the exe icon, replace `resources/icon.png` and rebuild.
 
 ### macOS/Linux Local Packaging
@@ -118,7 +120,7 @@ For better Linux compatibility, build on a stable distribution such as Ubuntu 20
 
 ### Release Asset Policy
 
-- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.5.exe` or `Nuclei_GUI_windows_x64_v2.5.5.exe`. Binary update support is currently limited to the Windows exe build.
+- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.6.exe` or `Nuclei_GUI_windows_x64_v2.5.6.exe`. Binary update support is currently limited to the Windows exe build.
 - Source runs: the updater uses GitHub's generated source zip for source-code updates, so no extra source zip asset is required.
 - Windows exe runs: the updater detects the PyInstaller build, downloads the matching `Nuclei_GUI*.exe`, closes the current app, replaces the exe, and restarts automatically.
 - macOS/Linux: this repository provides local packaging scripts, but does not publish official binary assets for these systems.
@@ -128,7 +130,7 @@ For better Linux compatibility, build on a stable distribution such as Ubuntu 20
 
 - **Dashboard**: scan statistics, vulnerability distribution, history records, quick actions
 - **Scanning**: official Nuclei engine integration, task queue, pause/resume, stop, progress, logs
-- **POC Management**: search, filter, sync, favorite, edit, test, and select POCs
+- **POC Management**: search, filter by default or user-created `poc_library/` folders, sync, favorite, edit, test, and select POCs
 - **Asset Input**: manual targets, file import, FOFA import, automatic target normalization and deduplication
 - **Asset Search**: FOFA, Hunter, Quake, Shodan integrations
 - **AI Assistant**: OpenAI-compatible API support for analysis and POC-related assistance
@@ -175,6 +177,11 @@ You must not use this tool for:
 The author and contributors are not responsible for any misuse, abuse, unauthorized use, or direct or indirect damages caused by this tool. By downloading, installing, running, or redistributing this tool, you acknowledge that you understand and accept all risks and legal responsibilities.
 
 ## Changelog
+
+### v2.5.6
+
+- Fixed portable packaging so custom POC folders are synced when testing `dist/Nuclei_GUI.exe`; source filters now support user-created top-level folders and recursive parent-folder matching.
+- Fixed settings dialogs so newline escapes render correctly in theme, UI scale, and API test failure messages.
 
 ### v2.5.5
 

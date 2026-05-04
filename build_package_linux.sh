@@ -32,6 +32,24 @@ cd "$ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+sync_runtime_layout() {
+    local target_dir="$1"
+    mkdir -p "$target_dir/bin"
+    mkdir -p "$target_dir/poc_library/custom"
+    mkdir -p "$target_dir/poc_library/cloud"
+    mkdir -p "$target_dir/poc_library/user_generated"
+
+    local nuclei_binary="$ROOT/bin/nuclei_linux"
+    if [ -f "$nuclei_binary" ]; then
+        cp "$nuclei_binary" "$target_dir/bin/nuclei_linux"
+        chmod +x "$target_dir/bin/nuclei_linux"
+    fi
+
+    if [ -d "$ROOT/poc_library" ]; then
+        cp -R "$ROOT/poc_library/." "$target_dir/poc_library/"
+    fi
+}
+
 if [ "$SKIP_INSTALL" -eq 0 ]; then
     "$PYTHON_BIN" -m pip install -r "requirements.txt"
     "$PYTHON_BIN" -m pip install -r "requirements-build.txt"
@@ -58,23 +76,11 @@ fi
 
 PACKAGE_DIR="$ROOT/dist/Nuclei_GUI_linux_portable"
 rm -rf "$PACKAGE_DIR"
-mkdir -p "$PACKAGE_DIR/bin"
-mkdir -p "$PACKAGE_DIR/poc_library/custom"
-mkdir -p "$PACKAGE_DIR/poc_library/cloud"
-mkdir -p "$PACKAGE_DIR/poc_library/user_generated"
 
 cp "$APP_PATH" "$PACKAGE_DIR/Nuclei_GUI"
 chmod +x "$PACKAGE_DIR/Nuclei_GUI"
-
-NUCLEI_BINARY="$ROOT/bin/nuclei_linux"
-if [ -f "$NUCLEI_BINARY" ]; then
-    cp "$NUCLEI_BINARY" "$PACKAGE_DIR/bin/nuclei_linux"
-    chmod +x "$PACKAGE_DIR/bin/nuclei_linux"
-fi
-
-if [ -d "$ROOT/poc_library" ]; then
-    cp -R "$ROOT/poc_library/." "$PACKAGE_DIR/poc_library/"
-fi
+sync_runtime_layout "$ROOT/dist"
+sync_runtime_layout "$PACKAGE_DIR"
 
 if [ "$CREATE_ARCHIVE" -eq 1 ]; then
     VERSION="$("$PYTHON_BIN" - <<'PY'

@@ -184,6 +184,13 @@ class NewScanDialog(QDialog):
         self.cmb_severity.setFixedWidth(scaled(120))
         self.cmb_severity.currentTextChanged.connect(self._filter_pocs)
         filter_row.addWidget(self.cmb_severity)
+
+        filter_row.addWidget(QLabel(tr("poc.filter_source")))
+        self.cmb_source = QComboBox()
+        self.cmb_source.addItem(tr("common.all"), "")
+        self.cmb_source.setFixedWidth(scaled(160))
+        self.cmb_source.currentTextChanged.connect(self._filter_pocs)
+        filter_row.addWidget(self.cmb_source)
         
         right_layout.addLayout(filter_row)
         
@@ -330,7 +337,63 @@ class NewScanDialog(QDialog):
             return
         
         pocs = self.poc_library.get_all_pocs()
+        self._populate_source_filter(pocs)
         self._render_poc_table(pocs)
+
+    def _folder_filter_label(self, folder_key, folder_label):
+        if folder_key == "__root__":
+            return tr("poc.source_root_folder")
+        parts = str(folder_key or "").split("/", 1)
+        built_in_labels = {
+            "custom": tr("poc.source_local"),
+            "cloud": tr("poc.source_cloud"),
+            "user_generated": tr("poc.source_user"),
+        }
+        if parts and parts[0] in built_in_labels:
+            if len(parts) == 1:
+                return built_in_labels[parts[0]]
+            return f"{built_in_labels[parts[0]]}/{parts[1]}"
+        return folder_label or folder_key
+
+    def _get_poc_folder_options(self, pocs):
+        folders = {
+            "__root__": self._folder_filter_label("__root__", ""),
+            "custom": self._folder_filter_label("custom", "custom"),
+            "cloud": self._folder_filter_label("cloud", "cloud"),
+            "user_generated": self._folder_filter_label("user_generated", "user_generated"),
+        }
+        if self.poc_library and hasattr(self.poc_library, "get_folder_options"):
+            for folder_key, folder_label in self.poc_library.get_folder_options():
+                folders[folder_key] = self._folder_filter_label(folder_key, folder_label)
+
+        for poc in pocs:
+            folder_key = poc.get("folder_key", "__root__")
+            folder_label = poc.get("folder_label", "")
+            folders[folder_key] = self._folder_filter_label(folder_key, folder_label)
+
+        built_in_order = {"__root__": 0, "custom": 1, "cloud": 2, "user_generated": 3}
+        return sorted(
+            folders.items(),
+            key=lambda item: (built_in_order.get(item[0], 100), item[1].lower())
+        )
+
+    def _populate_source_filter(self, pocs):
+        if not hasattr(self, "cmb_source"):
+            return
+
+        current_key = self.cmb_source.currentData() or ""
+        self.cmb_source.blockSignals(True)
+        self.cmb_source.clear()
+        self.cmb_source.addItem(tr("common.all"), "")
+
+        selected_index = 0
+        for folder_key, label in self._get_poc_folder_options(pocs):
+            self.cmb_source.addItem(label, folder_key)
+            if folder_key == current_key:
+                selected_index = self.cmb_source.count() - 1
+
+        self.cmb_source.setCurrentIndex(selected_index)
+        self.cmb_source.blockSignals(False)
     
     def _render_poc_table(self, pocs):
         """渲染 POC 表格"""
@@ -359,6 +422,7 @@ class NewScanDialog(QDialog):
             # ID
             id_item = QTableWidgetItem(poc.get('id', ''))
             id_item.setData(Qt.UserRole, poc_path)  # 存储路径用于双击查看
+            id_item.setData(Qt.UserRole + 1, poc.get("folder_key", "__root__"))
             self.poc_table.setItem(row, 1, id_item)
             
             # 名称
@@ -407,6 +471,7 @@ class NewScanDialog(QDialog):
         """筛选 POC"""
         search_text = self.txt_search.text().lower()
         severity = self.cmb_severity.currentText()
+        source_key = self.cmb_source.currentData() if hasattr(self, "cmb_source") else ""
         
         self.poc_table.setUpdatesEnabled(False)
         for row in range(self.poc_table.rowCount()):
@@ -425,6 +490,12 @@ class NewScanDialog(QDialog):
             if severity != tr("common.all"):
                 sev_item = self.poc_table.item(row, 3)
                 if sev_item and sev_item.text() != severity:
+                    show = False
+
+            if source_key:
+                id_item = self.poc_table.item(row, 1)
+                row_source_key = id_item.data(Qt.UserRole + 1) if id_item else ""
+                if row_source_key != source_key and not str(row_source_key or "").startswith(f"{source_key}/"):
                     show = False
             
             self.poc_table.setRowHidden(row, not show)

@@ -6,7 +6,7 @@ import urllib3
 import logging
 import threading
 from urllib.parse import urljoin
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from PyQt5.QtCore import QObject, pyqtSignal
 from i18n import tr
 
@@ -35,7 +35,13 @@ class NativeScanner(QObject):
 
         # 配置 - 使用较短的超时便于快速停止
         self.timeout = min(self.config.get('timeout', 10), 5)  # 最大 5 秒
-        self.max_workers = self.config.get('rate_limit', 50)
+        configured_workers = self.config.get('rate_limit', 50)
+        try:
+            configured_workers = int(configured_workers)
+        except (TypeError, ValueError):
+            configured_workers = 10
+        self.max_workers = max(1, min(configured_workers, 32))
+        self.max_in_flight = max(self.max_workers * 2, 8)
         self.retries = self.config.get('retries', 0)
         self.proxies = None
         if self.config.get('proxy'):
@@ -74,18 +80,24 @@ class NativeScanner(QObject):
         with self._stop_lock:
             return not self._is_running
 
+    def _expand_target_urls(self):
+        expanded_targets = []
+        for target in self.targets:
+            if not target.startswith(('http://', 'https://')):
+                expanded_targets.extend([f'http://{target}', f'https://{target}'])
+            else:
+                expanded_targets.append(target)
+        return expanded_targets
+
     def run(self):
-        """执行扫描"""
-        total_tasks = len(self.targets) * len(self.templates)
+        """Execute the scan with bounded in-flight tasks."""
         self.log_signal.emit(tr("scanner.engine_started", targets=len(self.targets), templates=len(self.templates), workers=self.max_workers))
 
-        # 创建共享 Session，便于快速关闭
         self._session = requests.Session()
         self._session.verify = False
         if self.proxies:
             self._session.proxies = self.proxies
 
-        # 解析所有模板
         parsed_templates = []
         for t_path in self.templates:
             if not self._is_running:
@@ -98,67 +110,58 @@ class NativeScanner(QObject):
                         'id': data.get('id', 'unknown'),
                         'info': data.get('info', {}),
                         'requests': data.get('requests', []),
-                        # 兼容 http 字段 (新版 nuclei 使用 http，旧版使用 requests)
-                        'http': data.get('http', [])
+                        'http': data.get('http', []),
                     })
             except Exception as e:
                 self.log_signal.emit(tr("scanner.template_parse_failed", path=t_path, error=e))
 
-        # 任务队列
-        tasks = []
+        expanded_targets = self._expand_target_urls()
+        total_tasks = len(expanded_targets) * len(parsed_templates)
         processed_count = 0
+
+        def submit_pending_jobs(executor, jobs_iter, in_flight):
+            while self._is_running and len(in_flight) < self.max_in_flight:
+                try:
+                    base_url, tmpl = next(jobs_iter)
+                except StopIteration:
+                    break
+                try:
+                    in_flight.add(executor.submit(self._scan_single_target, base_url, tmpl))
+                except RuntimeError:
+                    break
 
         try:
             self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
-            
-            for target in self.targets:
-                if not self._is_running:
-                    break
-                    
-                # 规范化目标 URL
-                if not target.startswith(('http://', 'https://')):
-                    base_urls = [f'http://{target}', f'https://{target}']
-                else:
-                    base_urls = [target]
+            jobs_iter = iter((base_url, tmpl) for base_url in expanded_targets for tmpl in parsed_templates)
+            in_flight = set()
+            submit_pending_jobs(self._executor, jobs_iter, in_flight)
 
-                for base_url in base_urls:
-                    for tmpl in parsed_templates:
-                        if not self._is_running:
-                            break
-                        
-                        # 提交任务
-                        future = self._executor.submit(self._scan_single_target, base_url, tmpl)
-                        tasks.append(future)
+            while in_flight and self._is_running:
+                done, in_flight = wait(in_flight, timeout=0.2, return_when=FIRST_COMPLETED)
+                if not done:
+                    continue
 
-            # 等待结果 - 使用超时避免阻塞
-            for future in as_completed(tasks):
-                if not self._is_running:
-                    break
-                
-                try:
-                    # 添加短超时，避免阻塞
-                    result = future.result(timeout=0.1)
-                    if result and self._is_running:
-                        try:
-                            self.result_signal.emit(result)
-                        except RuntimeError:
-                            pass  # 信号可能已断开
-                except TimeoutError:
-                    # 任务尚未完成，跳过
-                    pass
-                except Exception:
-                    pass
-                
-                processed_count += 1
-                # 降频发送进度，避免 UI 卡顿
-                if self._is_running and (processed_count % 5 == 0 or processed_count == len(tasks)):
+                for future in done:
                     try:
-                        self.progress_signal.emit(processed_count, len(tasks), tr("scanner.scanning_progress", current=processed_count, total=len(tasks)))
-                    except RuntimeError:
-                        pass  # 信号可能已断开
-                    
+                        result = future.result()
+                        if result and self._is_running:
+                            try:
+                                self.result_signal.emit(result)
+                            except RuntimeError:
+                                pass
+                    except Exception:
+                        pass
+
+                    processed_count += 1
+                    if self._is_running and total_tasks and (processed_count % 5 == 0 or processed_count == total_tasks):
+                        try:
+                            self.progress_signal.emit(processed_count, total_tasks, tr("scanner.scanning_progress", current=processed_count, total=total_tasks))
+                        except RuntimeError:
+                            pass
+
+                submit_pending_jobs(self._executor, jobs_iter, in_flight)
+
         finally:
-            # 确保线程池被关闭
             if self._executor:
                 try:
                     self._executor.shutdown(wait=False, cancel_futures=True)
@@ -169,7 +172,6 @@ class NativeScanner(QObject):
                         pass
                 self._executor = None
 
-            # 关闭 Session
             if self._session:
                 try:
                     self._session.close()
@@ -177,7 +179,6 @@ class NativeScanner(QObject):
                     pass
                 self._session = None
 
-        # 安全地发送完成信号
         try:
             if self._is_running:
                 self.log_signal.emit(tr("scanner.scan_complete"))
@@ -185,7 +186,7 @@ class NativeScanner(QObject):
                 self.log_signal.emit(tr("scanner.scan_stopped"))
             self.finished_signal.emit()
         except RuntimeError:
-            pass  # 信号可能已断开
+            pass
 
     def _scan_single_target(self, target, tmpl):
         """扫描单个目标"""

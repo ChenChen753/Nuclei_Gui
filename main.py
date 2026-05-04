@@ -1,5 +1,6 @@
 import sys
 import os
+from collections import deque
 from pathlib import Path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QTableWidget,
@@ -8,7 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QProgressBar, QGridLayout, QPlainTextEdit, QDialog, QComboBox,
                              QToolBar, QAction, QFrame, QStackedWidget, QListWidget,
                              QListWidgetItem, QSizePolicy, QScrollArea)
-from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl, QTimer, QCoreApplication
+from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl, QTimer, QCoreApplication, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon, QColor, QPainter, QBrush, QPen, QDesktopServices
 
 # ================= DPI 缩放系统（从公共模块导入） =================
@@ -216,6 +217,23 @@ class PlainPasteTextEdit(QPlainTextEdit):
         else:
             super().insertFromMimeData(source)
 
+class POCLoadThread(QThread):
+    """Load POC metadata in the background to keep the UI responsive."""
+
+    loaded_signal = pyqtSignal(list)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, poc_library):
+        super().__init__()
+        self.poc_library = poc_library
+
+    def run(self):
+        try:
+            self.loaded_signal.emit(self.poc_library.get_all_pocs(use_cache=False))
+        except Exception as exc:
+            self.error_signal.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -240,6 +258,14 @@ class MainWindow(QMainWindow):
         self.poc_library = POCLibrary()
         self.pending_scan_pocs = set()  # 待扫描的 POC 队列
         self.scan_thread = None
+        self.all_poc_data = []
+        self.all_scan_pocs = []
+        self._poc_load_thread = None
+        self._scan_poc_table_dirty = True
+        self._scan_runtime_vuln_count = 0
+        self._scan_runtime_severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+        self._historical_vuln_count = 0
+        self._historical_severity_distribution = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
         self.scan_results_data = [] # 确保初始化
 
         
@@ -2586,65 +2612,74 @@ class MainWindow(QMainWindow):
 
         return card
     
-    def _update_scan_stats(self, targets=0, pocs=0, vulns=None):
-        """更新扫描统计面板"""
+    def _empty_severity_counts(self):
+        return {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+
+    def _reset_scan_runtime_metrics(self):
+        self._scan_runtime_vuln_count = 0
+        self._scan_runtime_severity_counts = self._empty_severity_counts()
+
+    def _load_historical_scan_metrics(self):
+        from core.scan_history import get_scan_history
+
+        try:
+            stats = get_scan_history().get_statistics()
+        except Exception:
+            stats = {}
+
+        self._historical_vuln_count = stats.get('total_vulns', 0)
+        self._historical_severity_distribution = self._empty_severity_counts()
+        for sev, count in (stats.get('severity_distribution', {}) or {}).items():
+            sev_key = str(sev).lower()
+            if sev_key in self._historical_severity_distribution:
+                self._historical_severity_distribution[sev_key] = count
+
+    def _update_scan_stats(self, targets=0, pocs=0, vulns=None, vuln_count=None, severity_counts=None):
+        """Update the scan summary cards."""
         if hasattr(self, 'scan_stat_targets'):
             self.scan_stat_targets.value_label.setText(str(targets))
         if hasattr(self, 'scan_stat_pocs'):
             self.scan_stat_pocs.value_label.setText(str(pocs))
-        
-        if vulns is not None:
-            # 统计各严重程度的Vulns量
-            severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
-            for v in vulns:
-                sev = v.get('info', {}).get('severity', 'unknown').lower()
+
+        if severity_counts is None and vulns is not None:
+            severity_counts = self._empty_severity_counts()
+            for vuln in vulns:
+                sev = vuln.get('info', {}).get('severity', 'unknown').lower()
                 if sev in severity_counts:
                     severity_counts[sev] += 1
-            
-            if hasattr(self, 'scan_stat_vulns'):
-                self.scan_stat_vulns.value_label.setText(str(len(vulns)))
-            if hasattr(self, 'scan_stat_critical'):
-                self.scan_stat_critical.value_label.setText(str(severity_counts['critical']))
-            if hasattr(self, 'scan_stat_high'):               self.scan_stat_high.value_label.setText(str(severity_counts['high']))
-            if hasattr(self, 'scan_stat_medium'):
-                self.scan_stat_medium.value_label.setText(str(severity_counts['medium']))
-            if hasattr(self, 'scan_stat_low'):
-                self.scan_stat_low.value_label.setText(str(severity_counts['low']))
-    
+            vuln_count = len(vulns)
+        elif severity_counts is None:
+            severity_counts = self._empty_severity_counts()
+
+        if vuln_count is None:
+            vuln_count = sum(severity_counts.values())
+
+        if hasattr(self, 'scan_stat_vulns'):
+            self.scan_stat_vulns.value_label.setText(str(vuln_count))
+        if hasattr(self, 'scan_stat_critical'):
+            self.scan_stat_critical.value_label.setText(str(severity_counts['critical']))
+        if hasattr(self, 'scan_stat_high'):
+            self.scan_stat_high.value_label.setText(str(severity_counts['high']))
+        if hasattr(self, 'scan_stat_medium'):
+            self.scan_stat_medium.value_label.setText(str(severity_counts['medium']))
+        if hasattr(self, 'scan_stat_low'):
+            self.scan_stat_low.value_label.setText(str(severity_counts['low']))
+
     def _update_dashboard_vuln_count_realtime(self):
-        """实时更新仪表盘的Vulns量卡片（扫描过程中）"""
-        if hasattr(self, 'card_vulns') and hasattr(self, 'scan_results_data'):
-            # 获取当前扫描发现的Vulns量
-            current_vuln_count = len(self.scan_results_data)
-            
-            # 获取历史漏洞总数
-            from core.scan_history import get_scan_history
-            stats = get_scan_history().get_statistics()
-            historical_vulns = stats.get('total_vulns', 0)
-            
-            # 显示：历史总数 + 当前扫描发现数
-            total_display = historical_vulns + current_vuln_count
+        """Update dashboard counters from cached historical data and runtime totals."""
+        total_display = self._historical_vuln_count + self._scan_runtime_vuln_count
+        if hasattr(self, 'card_vulns'):
             self._update_card_value(self.card_vulns, str(total_display))
-            
-            # 同时更新严重程度分布条形图
-            if hasattr(self, 'severity_bars') and self.scan_results_data:
-                severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
-                for v in self.scan_results_data:
-                    sev = v.get('info', {}).get('severity', 'unknown').lower()
-                    if sev in severity_counts:
-                        severity_counts[sev] += 1
-                
-                # 获取历史严重程度分布
-                hist_dist = stats.get('severity_distribution', {})
-                
-                for sev, bar in self.severity_bars.items():
-                    hist_count = hist_dist.get(sev, 0)
-                    current_count = severity_counts.get(sev, 0)
-                    total = hist_count + current_count
-                    bar.setRange(0, max(total, 10))
-                    bar.setValue(total)
-                    bar.setFormat(f"{total}")
-    
+
+        if hasattr(self, 'severity_bars'):
+            for sev, bar in self.severity_bars.items():
+                hist_count = self._historical_severity_distribution.get(sev, 0)
+                current_count = self._scan_runtime_severity_counts.get(sev, 0)
+                total = hist_count + current_count
+                bar.setRange(0, max(total, 10))
+                bar.setValue(total)
+                bar.setFormat(f"{total}")
+
     def show_new_scan_dialog(self):
         """显示新建扫描配置弹窗"""
         from dialogs.new_scan_dialog import NewScanDialog
@@ -2718,24 +2753,25 @@ class MainWindow(QMainWindow):
         )
     
     def _set_selected_pocs(self, poc_paths):
-        """设置选中的 POC"""
-        # 先取消所有选择
+        """Set selected POCs in the hidden scan table."""
+        self._ensure_scan_poc_table_ready()
+
         for row in range(self.list_scan_pocs.rowCount()):
             item = self.list_scan_pocs.item(row, 0)
             if item:
                 item.setCheckState(Qt.Unchecked)
-        
-        # 选中指定的 POC
+
         for row in range(self.list_scan_pocs.rowCount()):
-            path_item = self.list_scan_pocs.item(row, 1)  # ID 列
-            if path_item:
-                poc_id = path_item.text()
-                for poc_path in poc_paths:
-                    if poc_id in poc_path or poc_path.endswith(poc_id + '.yaml'):
-                        check_item = self.list_scan_pocs.item(row, 0)
-                        if check_item:
-                            check_item.setCheckState(Qt.Checked)
-                        break
+            path_item = self.list_scan_pocs.item(row, 1)
+            if not path_item:
+                continue
+            poc_id = path_item.text()
+            for poc_path in poc_paths:
+                if poc_id in poc_path or poc_path.endswith(poc_id + '.yaml') or poc_path.endswith(poc_id + '.yml'):
+                    check_item = self.list_scan_pocs.item(row, 0)
+                    if check_item:
+                        check_item.setCheckState(Qt.Checked)
+                    break
 
     # ================= FOFA 内嵌页面操作 =================
     
@@ -3186,7 +3222,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, tr("msg.success"), tr("settings.api_test_success"))
             else:
                 error_msg = response.text[:200] if response.text else tr("msg.unknown_error")
-                QMessageBox.warning(self, tr("msg.failure"), tr("settings.api_test_failed", code=response.status_code, error=error_msg))
+                QMessageBox.warning(
+                    self,
+                    tr("msg.failure"),
+                    message_text(tr("settings.api_test_failed", code=response.status_code, error=error_msg))
+                )
         except requests.exceptions.Timeout:
             QMessageBox.warning(self, tr("msg.failure"), tr("settings.connection_timeout"))
         except Exception as e:
@@ -3328,7 +3368,7 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(
             self, tr("msg.success"),
-            tr("settings.theme_applied", name=tr(f"theme.{theme_name}"))
+            message_text(tr("settings.theme_applied", name=tr(f"theme.{theme_name}")))
         )
 
     def _apply_ui_scale(self):
@@ -3351,7 +3391,7 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(
             self, tr("msg.success"),
-            tr("settings.scale_applied", scale=scale_text)
+            message_text(tr("settings.scale_applied", scale=scale_text))
         )
 
     def _apply_language(self):
@@ -4417,7 +4457,7 @@ class MainWindow(QMainWindow):
         editor.setReadOnly(True)
         editor.setFont(QFont("Consolas", scaled(10)))
         editor.setStyleSheet(scaled_style("""
-            QTextEdit {
+            QPlainTextEdit {
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3c3c3c;
@@ -4943,8 +4983,8 @@ class MainWindow(QMainWindow):
         # POC 来源分类筛选
         filter_layout.addWidget(QLabel(tr("poc.filter_source")))
         self.poc_source_filter = QComboBox()
-        self.poc_source_filter.addItems([tr("common.all"), tr("poc.source_user"), tr("poc.source_cloud"), tr("poc.source_local")])
-        self.poc_source_filter.setFixedWidth(scaled(100))
+        self.poc_source_filter.addItem(tr("common.all"), "")
+        self.poc_source_filter.setFixedWidth(scaled(180))
         self.poc_source_filter.currentTextChanged.connect(self.filter_poc_table)
         filter_layout.addWidget(self.poc_source_filter)
 
@@ -5000,20 +5040,88 @@ class MainWindow(QMainWindow):
         layout.addWidget(table_container, 1)
 
     def refresh_poc_list(self):
-        """刷新 POC 表格"""
-        try:
-            self.poc_library.invalidate_cache()
-            self.all_poc_data = self.poc_library.get_all_pocs()
-            self._render_poc_table(self.all_poc_data)
-            
-            self.status_bar.showMessage(tr("poc.loaded_count", count=len(self.all_poc_data)))
-            # 同步更新扫描页面的列表
-            self.update_scan_poc_list(self.all_poc_data)
-        except Exception as e:
-            QMessageBox.warning(self, tr("poc.refresh_failed"), tr("poc.refresh_error", error=str(e)))
-            import traceback
-            traceback.print_exc()
-    
+        """Refresh the POC table without blocking the UI."""
+        if self._poc_load_thread and self._poc_load_thread.isRunning():
+            return
+
+        self.poc_table.setEnabled(False)
+        self.statusBar().showMessage("Loading POCs...")
+
+        self._poc_load_thread = POCLoadThread(self.poc_library)
+        self._poc_load_thread.loaded_signal.connect(self._on_poc_list_loaded)
+        self._poc_load_thread.error_signal.connect(self._on_poc_list_load_failed)
+        self._poc_load_thread.finished.connect(self._cleanup_poc_load_thread)
+        self._poc_load_thread.start()
+
+    def _cleanup_poc_load_thread(self):
+        self.poc_table.setEnabled(True)
+        self._poc_load_thread = None
+
+    def _on_poc_list_loaded(self, pocs):
+        self.all_poc_data = pocs
+        self._populate_poc_source_filter(self.all_poc_data)
+        self.filter_poc_table()
+        self.update_scan_poc_list(self.all_poc_data)
+        self.statusBar().showMessage(tr("poc.loaded_count", count=len(self.all_poc_data)))
+
+    def _on_poc_list_load_failed(self, error):
+        QMessageBox.warning(self, tr("poc.refresh_failed"), tr("poc.refresh_error", error=error))
+
+    def _folder_filter_label(self, folder_key, folder_label):
+        if folder_key == "__root__":
+            return tr("poc.source_root_folder")
+        parts = str(folder_key or "").split("/", 1)
+        built_in_labels = {
+            "custom": tr("poc.source_local"),
+            "cloud": tr("poc.source_cloud"),
+            "user_generated": tr("poc.source_user"),
+        }
+        if parts and parts[0] in built_in_labels:
+            if len(parts) == 1:
+                return built_in_labels[parts[0]]
+            return f"{built_in_labels[parts[0]]}/{parts[1]}"
+        return folder_label or folder_key
+
+    def _get_poc_folder_options(self, pocs):
+        folders = {
+            "__root__": self._folder_filter_label("__root__", ""),
+            "custom": self._folder_filter_label("custom", "custom"),
+            "cloud": self._folder_filter_label("cloud", "cloud"),
+            "user_generated": self._folder_filter_label("user_generated", "user_generated"),
+        }
+        if hasattr(self, "poc_library") and hasattr(self.poc_library, "get_folder_options"):
+            for folder_key, folder_label in self.poc_library.get_folder_options():
+                folders[folder_key] = self._folder_filter_label(folder_key, folder_label)
+
+        for poc in pocs:
+            folder_key = poc.get("folder_key", "__root__")
+            folder_label = poc.get("folder_label", "")
+            folders[folder_key] = self._folder_filter_label(folder_key, folder_label)
+
+        built_in_order = {"__root__": 0, "custom": 1, "cloud": 2, "user_generated": 3}
+        return sorted(
+            folders.items(),
+            key=lambda item: (built_in_order.get(item[0], 100), item[1].lower())
+        )
+
+    def _populate_poc_source_filter(self, pocs):
+        if not hasattr(self, "poc_source_filter"):
+            return
+
+        current_key = self.poc_source_filter.currentData() or ""
+        self.poc_source_filter.blockSignals(True)
+        self.poc_source_filter.clear()
+        self.poc_source_filter.addItem(tr("common.all"), "")
+
+        selected_index = 0
+        for folder_key, label in self._get_poc_folder_options(pocs):
+            self.poc_source_filter.addItem(label, folder_key)
+            if folder_key == current_key:
+                selected_index = self.poc_source_filter.count() - 1
+
+        self.poc_source_filter.setCurrentIndex(selected_index)
+        self.poc_source_filter.blockSignals(False)
+
     def _get_poc_type(self, poc):
         """根据 tags 判断漏洞类型"""
         tags = str(poc.get('tags', '')).lower()
@@ -5078,17 +5186,11 @@ class MainWindow(QMainWindow):
             type_item.setForeground(QColor(type_colors.get(poc_type, "#7f8c8d")))
             self.poc_table.setItem(row, 3, type_item)
             
-            # 来源（根据路径更准确判断）
-            path = poc.get('path', '')
-            source = poc.get('source', 'legacy')
-            if 'user_generated' in path:
-                source_text = tr("poc.source_user_icon")
-            elif source == 'cloud':
-                source_text = tr("poc.source_cloud_icon")
-            elif source == 'custom':
-                source_text = tr("poc.source_local_icon")
-            else:
-                source_text = tr("poc.source_local_icon2")
+            # 来源（按 POC 所在文件夹显示，支持用户任意自定义目录）
+            source_text = self._folder_filter_label(
+                poc.get("folder_key", "__root__"),
+                poc.get("folder_label", "")
+            )
             self.poc_table.setItem(row, 4, QTableWidgetItem(source_text))
         
         self.poc_table.setUpdatesEnabled(True)
@@ -5101,21 +5203,14 @@ class MainWindow(QMainWindow):
         keyword = self.poc_search_input.text().lower().strip()
         type_filter = self.poc_type_filter.currentText()
         severity_filter = self.poc_severity_filter.currentText()
-        source_filter = self.poc_source_filter.currentText() if hasattr(self, 'poc_source_filter') else tr("common.all")
-        
-        # 来源分类映射
-        source_mapping = {
-            tr("poc.source_user"): lambda p: 'user_generated' in p.get('path', ''),
-            tr("poc.source_cloud"): lambda p: p.get('source') == 'cloud',
-            tr("poc.source_local"): lambda p: p.get('source') in ['custom', 'legacy'] and 'user_generated' not in p.get('path', ''),
-        }
+        source_filter = self.poc_source_filter.currentData() if hasattr(self, 'poc_source_filter') else ""
         
         filtered = []
         for poc in self.all_poc_data:
             # 来源分类匹配
-            if source_filter != tr("common.all"):
-                filter_func = source_mapping.get(source_filter)
-                if filter_func and not filter_func(poc):
+            if source_filter:
+                folder_key = poc.get("folder_key", "__root__")
+                if folder_key != source_filter and not str(folder_key).startswith(f"{source_filter}/"):
                     continue
             
             # 关键词匹配（增强版：支持 CVE 编号搜索）
@@ -5570,8 +5665,11 @@ class MainWindow(QMainWindow):
         log_header.setStyleSheet(scaled_style(f"font-weight: bold; color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;"))
         log_layout.addWidget(log_header)
 
-        self.log_output = QTextEdit()
+        self.log_output = QPlainTextEdit()
         self.log_output.setReadOnly(True)
+        self.log_output.setMaximumBlockCount(3000)
+        self.log_output.setUndoRedoEnabled(False)
+        self.log_output.setCenterOnScroll(False)
         self.log_output.setStyleSheet(scaled_style(f"""
             QTextEdit {{
                 background-color: #1e293b;
@@ -5588,7 +5686,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(log_container)
         
         # 完整日志存储
-        self.full_log = []
+        self.full_log = deque(maxlen=3000)
     
     def _setup_hidden_scan_config(self):
         """设置隐藏的扫描配置组件（用于数据存储）"""
@@ -5599,6 +5697,7 @@ class MainWindow(QMainWindow):
         # POC 列表（隐藏）
         self.list_scan_pocs = QTableWidget()
         self.list_scan_pocs.setColumnCount(4)
+        self.list_scan_pocs.itemChanged.connect(self.on_poc_selection_changed)
         self.list_scan_pocs.hide()
         
         # 搜索和筛选组件（隐藏）
@@ -5678,52 +5777,58 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, tr("msg.failure"), tr("scan.read_file_failed", error=str(e)))
 
     def update_scan_poc_list(self, pocs):
-        """更新扫描页面的 POC 选择列表"""
-        self.all_scan_pocs = pocs # 保存完整列表供搜索使用
-        self.filter_scan_poc_list()
-        
+        """Store the full scan POC list and rebuild lazily on demand."""
+        self.all_scan_pocs = list(pocs)
+        self._scan_poc_table_dirty = True
+
+    def _collect_selected_pocs_from_table(self):
+        selected_pocs = []
+        for i in range(self.list_scan_pocs.rowCount()):
+            item = self.list_scan_pocs.item(i, 0)
+            if item and item.checkState() == Qt.Checked:
+                path = item.data(Qt.UserRole)
+                if path:
+                    selected_pocs.append(path)
+        return selected_pocs
+
+    def _ensure_scan_poc_table_ready(self):
+        if self._scan_poc_table_dirty:
+            self.filter_scan_poc_list()
+
     def filter_scan_poc_list(self):
-        """根据搜索框和严重级别过滤 POC"""
+        """Filter the hidden scan POC table on demand."""
         keyword = self.txt_search_poc.text().lower()
         severity_filter = self.cmb_severity_filter.currentText()
-        
-        if not hasattr(self, 'all_scan_pocs'):
-            return
-        
-        # 先过滤数据
+
         filtered_pocs = []
         for poc in self.all_scan_pocs:
-            # 关键词匹配
             if keyword:
                 keywords = keyword.split()
                 search_text = f"{poc['id']} {poc['name']} {poc.get('tags', '')} {poc.get('description', '')}".lower()
                 if not all(kw in search_text for kw in keywords):
                     continue
-            
-            # 严重级别匹配
+
             if severity_filter != tr("common.all") and poc.get('severity', '').lower() != severity_filter.lower():
                 continue
-            
+
             filtered_pocs.append(poc)
-        
-        # 暂停界面更新和信号，提升性能
+
+        selected_paths = set(self._collect_selected_pocs_from_table())
         self.list_scan_pocs.blockSignals(True)
         self.list_scan_pocs.setUpdatesEnabled(False)
         self.list_scan_pocs.setRowCount(0)
         self.list_scan_pocs.setRowCount(len(filtered_pocs))
-        
+
         for row, poc in enumerate(filtered_pocs):
-            # 复选框
             chk_item = QTableWidgetItem()
             chk_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            chk_item.setCheckState(Qt.Unchecked)
+            chk_item.setCheckState(Qt.Checked if poc['path'] in selected_paths else Qt.Unchecked)
             chk_item.setData(Qt.UserRole, poc['path'])
-            
+
             self.list_scan_pocs.setItem(row, 0, chk_item)
             self.list_scan_pocs.setItem(row, 1, QTableWidgetItem(poc['id']))
             self.list_scan_pocs.setItem(row, 2, QTableWidgetItem(poc['name']))
-            
-            # 严重级别 (带颜色)
+
             severity = poc.get('severity', 'unknown')
             severity_item = QTableWidgetItem(severity)
             if severity == 'critical':
@@ -5735,47 +5840,42 @@ class MainWindow(QMainWindow):
             elif severity == 'low':
                 severity_item.setForeground(QColor('#3498db'))
             self.list_scan_pocs.setItem(row, 3, severity_item)
-        
-        # 恢复界面更新和信号
+
         self.list_scan_pocs.setUpdatesEnabled(True)
         self.list_scan_pocs.blockSignals(False)
-        
-        # 更新Selected按钮文本
+        self._scan_poc_table_dirty = False
+
         if hasattr(self, 'btn_selected_pocs'):
-            count = len(self.get_selected_pocs())
-            self.btn_selected_pocs.setText(f"📋 Selected ({count})")
+            count = len(self._collect_selected_pocs_from_table())
+            self.btn_selected_pocs.setText(f"Selected ({count})")
 
     def toggle_select_all_pocs(self):
-        """全选/反选"""
+        """Toggle select all in the hidden scan POC table."""
+        self._ensure_scan_poc_table_ready()
         count = self.list_scan_pocs.rowCount()
-        if count == 0: return
-        
-        # 检查第一个是否选中，决定全选还是全不选
+        if count == 0:
+            return
+
         first_state = self.list_scan_pocs.item(0, 0).checkState()
         new_state = Qt.Unchecked if first_state == Qt.Checked else Qt.Checked
-        
+
         for i in range(count):
             self.list_scan_pocs.item(i, 0).setCheckState(new_state)
 
     def get_selected_pocs(self):
-        """获取选中的 POC 路径"""
-        selected_pocs = []
-        for i in range(self.list_scan_pocs.rowCount()):
-            item = self.list_scan_pocs.item(i, 0)
-            if item.checkState() == Qt.Checked:
-                path = item.data(Qt.UserRole)
-                selected_pocs.append(path)
-        return selected_pocs
-    
+        """Get selected POC paths from the hidden scan table."""
+        self._ensure_scan_poc_table_ready()
+        return self._collect_selected_pocs_from_table()
+
     def on_poc_selection_changed(self, item):
-        """POC 选择变化时更新按钮文本"""
-        if item.column() == 0:  # 只响应复选框列的变化
-            if hasattr(self, 'btn_selected_pocs'):
-                count = len(self.get_selected_pocs())
-                self.btn_selected_pocs.setText(f"📋 Selected ({count})")
-    
+        """Update the selected counter when checkbox state changes."""
+        if item.column() == 0 and hasattr(self, 'btn_selected_pocs'):
+            count = len(self._collect_selected_pocs_from_table())
+            self.btn_selected_pocs.setText(f"Selected ({count})")
+
     def show_selected_pocs_dialog(self):
-        """显示Selected的 POC 弹窗"""
+        """Show the selected POC management dialog."""
+        self._ensure_scan_poc_table_ready()
         selected = []
         for i in range(self.list_scan_pocs.rowCount()):
             item = self.list_scan_pocs.item(i, 0)
@@ -5784,68 +5884,60 @@ class MainWindow(QMainWindow):
                 poc_name = self.list_scan_pocs.item(i, 2).text() if self.list_scan_pocs.item(i, 2) else ""
                 poc_path = item.data(Qt.UserRole)
                 selected.append({'id': poc_id, 'name': poc_name, 'path': poc_path, 'row': i})
-        
+
         if not selected:
             QMessageBox.information(self, tr("msg.hint"), tr("poc.no_poc_selected"))
             return
-        
-        # 创建弹窗
+
         dialog = QDialog(self)
         dialog.setWindowTitle(tr("poc.selected_pocs_title", count=len(selected)))
         dialog.resize(scaled(600), scaled(400))
-        
+
         layout = QVBoxLayout(dialog)
-        
-        # 提示
-        lbl_hint = QLabel("💡 Uncheck to remove POC from scan list")
+
+        lbl_hint = QLabel("Uncheck to remove POC from scan list")
         lbl_hint.setStyleSheet("color: #3498db; font-weight: bold;")
         layout.addWidget(lbl_hint)
-        
-        # POC 列表
+
         poc_list = QTableWidget()
         poc_list.setColumnCount(3)
-        poc_list.setHorizontalHeaderLabels(["✓", "ID", tr("poc.col_name")])
+        poc_list.setHorizontalHeaderLabels(["?", "ID", tr("poc.col_name")])
         poc_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         poc_list.setColumnWidth(0, scaled(30))
         poc_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         poc_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         poc_list.setRowCount(len(selected))
         poc_list.verticalHeader().setVisible(False)
-        
+
         for row, poc in enumerate(selected):
             chk_item = QTableWidgetItem()
             chk_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
             chk_item.setCheckState(Qt.Checked)
-            chk_item.setData(Qt.UserRole, poc['row'])  # 存储原始行号
-            
+            chk_item.setData(Qt.UserRole, poc['row'])
             poc_list.setItem(row, 0, chk_item)
             poc_list.setItem(row, 1, QTableWidgetItem(poc['id']))
             poc_list.setItem(row, 2, QTableWidgetItem(poc['name']))
-        
+
         layout.addWidget(poc_list)
-        
-        # 按钮行
+
         btn_row = QHBoxLayout()
-        
         btn_uncheck_all = QPushButton(tr("common.uncheck_all"))
         btn_uncheck_all.clicked.connect(lambda: self._set_all_check_state(poc_list, Qt.Unchecked))
         btn_row.addWidget(btn_uncheck_all)
-        
         btn_row.addStretch()
-        
+
         btn_apply = QPushButton(tr("common.apply"))
         btn_apply.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold;")
         btn_apply.clicked.connect(lambda: self._apply_selected_changes(poc_list, dialog))
         btn_row.addWidget(btn_apply)
-        
+
         btn_cancel = QPushButton(tr("common.cancel"))
         btn_cancel.clicked.connect(dialog.reject)
         btn_row.addWidget(btn_cancel)
-        
+
         layout.addLayout(btn_row)
-        
         dialog.exec_()
-    
+
     def _set_all_check_state(self, table, state):
         """设置表格所有复选框状态"""
         for i in range(table.rowCount()):
@@ -5873,17 +5965,10 @@ class MainWindow(QMainWindow):
         dialog.accept()
 
     def start_scan(self, targets: list = None, templates: list = None):
-        """开始扫描任务
-        Args:
-            targets: Optional, 目标列表
-            templates: Optional, POC 路径列表
-        """
-        # 修复: 按钮点击信号会传递 boolean 值，导致 targets 变成 True/False
-        # 如果是 bool 类型，视为 None (即从 UI 获取目标)
+        """Start a scan task."""
         if isinstance(targets, bool):
             targets = None
-            
-        # 1. 获取目标
+
         if targets is None:
             raw_targets = self.txt_targets.toPlainText().strip()
             if not raw_targets:
@@ -5896,72 +5981,65 @@ class MainWindow(QMainWindow):
         if not targets:
             QMessageBox.warning(self, tr("msg.hint"), tr("scan.enter_targets_first"))
             return
-        
-        # 2. 获取 POC
+
         if templates is None:
-            templates = self.get_selected_pocs()
-            
+            templates = list(self.pending_scan_pocs) or self.get_selected_pocs()
+
         if not templates:
             QMessageBox.warning(self, tr("msg.hint"), tr("scan.select_poc_first"))
             return
-        
-        # 3. 从设置管理器获取扫描参数
+
         settings = get_settings()
         scan_config = settings.get_scan_config()
-        
-        # 构建自定义参数
+
         custom_args = []
-        
-        # 超时
         custom_args.extend(["-timeout", str(scan_config.get("timeout", 5))])
-        # 重试
         custom_args.extend(["-retries", str(scan_config.get("retries", 0))])
-        # 跟随重定向
         if scan_config.get("follow_redirects", False):
             custom_args.append("-fr")
-        # 发现即停
         if scan_config.get("stop_at_first_match", False):
             custom_args.append("-stop-at-first-match")
-        # 代理
         proxy = scan_config.get("proxy", "")
         if proxy:
             custom_args.extend(["-proxy", proxy])
-        # 详细模式
         if scan_config.get("verbose", False):
             custom_args.append("-v")
-        # 跳过 httpx 探测
         if scan_config.get("no_httpx", False):
             custom_args.append("-nh")
-            
+
         use_native = scan_config.get("use_native_scanner", False)
-            
-        # 4. 锁定 UI
+
         self.btn_start.setEnabled(False)
         self.btn_start.setText(tr("scan.scanning"))
         self.btn_stop.setEnabled(True)
-        self.btn_pause.setEnabled(True)  # 启用暂停按钮
+        self.btn_pause.setEnabled(True)
         self.btn_pause.setText(tr("task.pause"))
-        self.progress_bar.setRange(0, 100)  # 设置确定模式
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.show()
         engine_name = tr("scan.engine_native") if use_native else tr("scan.engine_nuclei")
         self.lbl_progress.setText(tr("scan.starting_engine", engine=engine_name, count=len(targets)))
         self.result_table.setRowCount(0)
         self.log_output.clear()
-        self.full_log = []  # 清空完整日志
-        self.scan_results_data = []  # 清空结果数据
-        
-        # 更新统计面板
-        self._update_scan_stats(targets=len(targets), pocs=len(templates), vulns=[])
-        
-        # 记录开始时间和扫描配置（用于保存历史）
+        self.full_log = deque(maxlen=3000)
+        self.scan_results_data = []
+        self._reset_scan_runtime_metrics()
+        self._load_historical_scan_metrics()
+
+        self._update_scan_stats(
+            targets=len(targets),
+            pocs=len(templates),
+            vuln_count=0,
+            severity_counts=self._scan_runtime_severity_counts,
+        )
+        self._update_dashboard_vuln_count_realtime()
+
         import time
         self.scan_start_time = time.time()
         self.current_scan_targets = targets
         self.current_scan_templates = templates
         self.current_scan_config = scan_config
-        
-        # 5. 注册任务到任务队列（以便在任务管理页面显示）
+
         from core.task_queue_manager import get_task_queue_manager, TaskStatus
         import uuid
         self.current_task_id = str(uuid.uuid4())[:8]
@@ -5973,11 +6051,10 @@ class MainWindow(QMainWindow):
             templates=templates,
             status=TaskStatus.RUNNING
         )
-        
-        # 6. 启动线程
+
         limit = scan_config.get("rate_limit", 150)
         bulk = scan_config.get("bulk_size", 25)
-        
+
         self.scan_thread = NucleiScanThread(targets, templates, limit, bulk, custom_args, use_native_scanner=use_native, oast_config=scan_config)
         self.scan_thread.log_signal.connect(self.append_log)
         self.scan_thread.result_signal.connect(self.add_scan_result)
@@ -6007,56 +6084,49 @@ class MainWindow(QMainWindow):
                 queue.update_task_progress(self.current_task_id, self.progress_bar.value(), result_count)
 
     def append_log(self, text):
-        self.log_output.append(text)
-        self.full_log.append(text)  # 存储完整日志
+        self.log_output.appendPlainText(text)
+        self.full_log.append(text)
 
     def add_scan_result(self, result):
-        """添加扫描结果到表格 - FORTRESS 风格"""
+        """Add a scan result row in the main result table."""
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
-        
+
         timestamp = result.get('timestamp', '')
         template_id = result.get('template-id', '')
         matched_at = result.get('matched-at', '')
         info = result.get('info', {})
         severity = info.get('severity', 'unknown')
         vuln_name = info.get('name', template_id)
-        
-        # 列 0: 状态圆点（使用特殊字符模拟）
-        status_item = QTableWidgetItem("●")
+
+        status_item = QTableWidgetItem(chr(0x25CF))
         status_item.setTextAlignment(Qt.AlignCenter)
-        # 根据严重程度设置颜色
         status_colors = {
             'critical': FORTRESS_COLORS['status_critical'],
-            'high': FORTRESS_COLORS['status_medium'],  # 橙色
+            'high': FORTRESS_COLORS['status_medium'],
             'medium': FORTRESS_COLORS['status_medium'],
-            'low': FORTRESS_COLORS['status_high'],  # 蓝色
-            'info': FORTRESS_COLORS['status_low'],  # 绿色
+            'low': FORTRESS_COLORS['status_high'],
+            'info': FORTRESS_COLORS['status_low'],
         }
         status_item.setForeground(QColor(status_colors.get(severity, '#6b7280')))
         status_item.setFont(QFont("Arial", scaled(16)))
         self.result_table.setItem(row, 0, status_item)
-        
-        # 列 1: 漏洞名称
+
         name_item = QTableWidgetItem(vuln_name)
         name_item.setToolTip(f"ID: {template_id}\n{info.get('description', '')}")
         self.result_table.setItem(row, 1, name_item)
-        
-        # 列 2: 严重程度
+
         severity_item = QTableWidgetItem(display_severity(severity))
         severity_item.setTextAlignment(Qt.AlignCenter)
         self.result_table.setItem(row, 2, severity_item)
-        
-        # 列 3: 目标
+
         target_item = QTableWidgetItem(matched_at)
         target_item.setToolTip(matched_at)
         self.result_table.setItem(row, 3, target_item)
-        
-        # 列 4: 发现时间（简化格式）
-        time_display = timestamp[11:19] if len(timestamp) > 19 else timestamp  # 只显示时间部分
+
+        time_display = timestamp[11:19] if len(timestamp) > 19 else timestamp
         self.result_table.setItem(row, 4, QTableWidgetItem(time_display))
-        
-        # 列 5: 操作按钮 - 使用容器居中对齐
+
         from core.fortress_style import get_table_button_style
         btn_container = QWidget()
         btn_layout = QHBoxLayout(btn_container)
@@ -6089,16 +6159,18 @@ class MainWindow(QMainWindow):
         self.result_table.setCellWidget(row, 5, btn_container)
         self.result_table.setRowHeight(row, scaled(50))
 
-        # 存储完整结果数据用于详情查看
         self.scan_results_data.append(result)
+        self._scan_runtime_vuln_count += 1
+        severity_key = str(severity).lower()
+        if severity_key in self._scan_runtime_severity_counts:
+            self._scan_runtime_severity_counts[severity_key] += 1
 
-        # 实时更新统计卡片
-        self._update_scan_stats(vulns=self.scan_results_data)
-
-        # 实时更新仪表盘Vulns量卡片
+        self._update_scan_stats(
+            vuln_count=self._scan_runtime_vuln_count,
+            severity_counts=self._scan_runtime_severity_counts,
+        )
         self._update_dashboard_vuln_count_realtime()
 
-        # 更新进度标签和状态指示器
         self.lbl_progress.setText(tr("scan.found_vulns", count=row + 1))
         self.status_indicator.setText(tr("status.scanning_count", count=row + 1))
         self.status_indicator.setStyleSheet(scaled_style(f"""
@@ -6108,7 +6180,7 @@ class MainWindow(QMainWindow):
             background-color: #fff7ed;
             border-radius: 12px;
         """))
-    
+
     def _show_result_detail_by_row(self, row):
         """通过行号显示结果详情"""
         if row >= 0 and row < len(self.scan_results_data):

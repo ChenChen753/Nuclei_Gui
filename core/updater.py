@@ -20,7 +20,7 @@ from core.paths import app_dir, log_dir, user_data_dir
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.5"
+CURRENT_VERSION = "2.5.6"
 
 PACKAGE_SOURCE = "source"
 PACKAGE_WINDOWS_EXE = "windows_exe"

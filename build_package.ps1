@@ -13,6 +13,30 @@ if (-not $SkipInstall) {
     python -m pip install -r "requirements-build.txt"
 }
 
+function Sync-RuntimeLayout {
+    param(
+        [string]$TargetDir
+    )
+
+    New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetDir "bin") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetDir "poc_library/custom") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetDir "poc_library/cloud") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetDir "poc_library/user_generated") | Out-Null
+
+    $NucleiBinary = Join-Path $Root "bin/nuclei.exe"
+    if (Test-Path -LiteralPath $NucleiBinary) {
+        Copy-Item -LiteralPath $NucleiBinary -Destination (Join-Path $TargetDir "bin/nuclei.exe") -Force
+    }
+
+    $PocSource = Join-Path $Root "poc_library"
+    if (Test-Path -LiteralPath $PocSource) {
+        Get-ChildItem -LiteralPath $PocSource -Force | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $TargetDir "poc_library") -Recurse -Force
+        }
+    }
+}
+
 $ExePath = Join-Path $Root "dist/Nuclei_GUI.exe"
 
 if (-not $SkipBuild) {
@@ -29,22 +53,11 @@ if (Test-Path -LiteralPath $PackageDir) {
 }
 
 New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $PackageDir "bin") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $PackageDir "poc_library/custom") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $PackageDir "poc_library/cloud") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $PackageDir "poc_library/user_generated") | Out-Null
 
 Copy-Item -LiteralPath $ExePath -Destination (Join-Path $PackageDir "Nuclei_GUI.exe") -Force
 
-$NucleiBinary = Join-Path $Root "bin/nuclei.exe"
-if (Test-Path -LiteralPath $NucleiBinary) {
-    Copy-Item -LiteralPath $NucleiBinary -Destination (Join-Path $PackageDir "bin/nuclei.exe") -Force
-}
-
-$PocSource = Join-Path $Root "poc_library"
-if (Test-Path -LiteralPath $PocSource) {
-    Copy-Item -Path (Join-Path $PocSource "*") -Destination (Join-Path $PackageDir "poc_library") -Recurse -Force
-}
+Sync-RuntimeLayout -TargetDir (Join-Path $Root "dist")
+Sync-RuntimeLayout -TargetDir $PackageDir
 
 Write-Host ""
 Write-Host "Package ready:"

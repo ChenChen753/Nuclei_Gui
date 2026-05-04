@@ -10,7 +10,7 @@
 
 ## 项目信息
 
-- **版本**: 2.5.5
+- **版本**: 2.5.6
 - **作者**: 辰辰
 - **技术栈**: Python 3.x + PyQt5 + Nuclei
 - **运行平台**: Windows / macOS / Linux（完全跨平台支持）
@@ -122,6 +122,8 @@ dist/Nuclei_GUI_portable/
 
 `i18n/`、`resources/`、源码模块会打进 exe；`bin/` 和 `poc_library/` 保持在 exe 同级，方便后续替换 Nuclei 和维护 POC。运行日志和数据库会写入用户数据目录，例如 Windows 下的 `%APPDATA%/NucleiGUI/`。
 
+打包脚本会同时同步外部运行目录到 `dist/` 和 `dist/Nuclei_GUI_portable/`。如果直接测试 `dist/Nuclei_GUI.exe`，它读取的是 `dist/poc_library/`；正式分发建议使用完整的 `dist/Nuclei_GUI_portable/` 目录。`poc_library/` 下用户自建的一层目录会被复制到产物中，来源筛选选择父目录时会递归显示其子目录 POC。
+
 程序图标会优先使用 `resources/icon.ico`；如果没有该文件，打包时会自动把 `resources/icon.png` 转成临时 `.ico` 并写入 exe。需要替换 exe 图标时，更新 `resources/icon.png` 后重新运行打包脚本即可。
 
 ### macOS/Linux 本地打包
@@ -172,7 +174,7 @@ dist/Nuclei_GUI_linux_portable/
 
 ### Release 发布策略
 
-- Windows：上传 `Nuclei_GUI*.exe`，例如 `Nuclei_GUI_v2.5.5.exe` 或 `Nuclei_GUI_windows_x64_v2.5.5.exe`；当前二进制更新策略仅面向 Windows exe。
+- Windows：上传 `Nuclei_GUI*.exe`，例如 `Nuclei_GUI_v2.5.6.exe` 或 `Nuclei_GUI_windows_x64_v2.5.6.exe`；当前二进制更新策略仅面向 Windows exe。
 - 源码运行：程序会使用 GitHub Release 自动生成的源码 zip 包进行更新，不需要额外上传源码 zip。
 - Windows exe 运行：程序会自动识别 PyInstaller 打包状态，只下载匹配的 `Nuclei_GUI*.exe`，下载完成后关闭当前程序、替换 exe 并自动重新启动。
 - macOS/Linux：仓库只提供一键打包脚本，不上传官方二进制文件；需要时在对应系统本地执行脚本构建。
@@ -281,6 +283,7 @@ dist/Nuclei_GUI_linux_portable/
 
 - POC 列表浏览和搜索
 - 按严重程度/标签筛选
+- 按 `poc_library/` 下的默认目录和用户自定义目录筛选，支持父目录递归显示子目录 POC
 - POC 导入 (文件/目录)
 - POC 在线同步 (从 nuclei-templates 官方仓库)
 - POC 编辑器 (语法高亮)
@@ -514,7 +517,11 @@ socks5://127.0.0.1:1080
 
 ## 更新日志
 
-### v2.5.5 (当前版本)
+### v2.5.6 (当前版本)
+- ✅ **POC 自定义目录与便携打包修复**：修复打包后直接运行 `dist/Nuclei_GUI.exe` 时自定义 POC 文件夹未同步的问题，来源筛选支持用户自建顶层目录和父目录递归匹配
+- ✅ **设置弹窗换行修复**：修复主题应用、界面缩放、API 测试失败弹窗中 `\n` 直接显示的问题
+
+### v2.5.5
 - ✅ **Windows exe 自更新稳定性修复**：自更新改为使用持久更新目录、旧 exe 备份、SHA256 校验和 `logs/update_apply.log` 日志，修复提示已替换但实际仍是旧版本的问题
 
 ### v2.5.4
