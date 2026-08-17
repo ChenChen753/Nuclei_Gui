@@ -7179,8 +7179,13 @@ if __name__ == "__main__":
     install_exception_hook()
     ensure_external_layout()
     
-    # 启用高 DPI 缩放支持
+    # 保留 Windows 的 125%/150% 等实际缩放比例。Qt 5 默认会把非整数比例
+    # 取整，2K + 150% 可能因此按 200% 布局，造成按钮过大和可用空间被挤压。
     try:
+        if hasattr(QApplication, "setHighDpiScaleFactorRoundingPolicy"):
+            QApplication.setHighDpiScaleFactorRoundingPolicy(
+                Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+            )
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     except Exception as e:
@@ -7215,6 +7220,8 @@ if __name__ == "__main__":
     # 获取系统 DPI 缩放比例，仅用于诊断输出；Qt 已使用逻辑像素处理控件尺寸。
     logical_dpi = primary_screen.logicalDotsPerInch() if primary_screen else 96.0
     system_scale = logical_dpi / 96.0  # 系统缩放比例
+    device_scale = primary_screen.devicePixelRatio() if primary_screen else system_scale
+    display_scale = max(float(device_scale or 1.0), system_scale)
 
     # 读取用户配置的 UI 缩放，0 表示自动
     user_scale = settings.get_ui_scale()
@@ -7226,10 +7233,12 @@ if __name__ == "__main__":
         print(f"[DPI Info] Using user-defined UI_SCALE: {user_scale}")
     else:
         # 自动计算缩放比例：Qt High DPI 下 screen 已是逻辑像素，避免再按 DPI 二次修正。
-        auto_scale, font_size = calculate_auto_ui_scale(screen.width(), screen.height())
+        auto_scale, font_size = calculate_auto_ui_scale(
+            screen.width(), screen.height(), display_scale
+        )
         set_ui_scale(auto_scale)
 
-        print(f"[DPI Info] Screen: {screen.width()}x{screen.height()}, DPI: {logical_dpi}, System Scale: {system_scale:.0%}, UI_SCALE: {get_ui_scale()}")
+        print(f"[DPI Info] Screen: {screen.width()}x{screen.height()}, DPI: {logical_dpi}, System Scale: {system_scale:.0%}, Device Scale: {display_scale:.2f}, UI_SCALE: {get_ui_scale()}")
 
     font = QFont("Microsoft YaHei", font_size)
     app.setFont(font)

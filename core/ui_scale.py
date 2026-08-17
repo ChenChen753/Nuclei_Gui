@@ -61,15 +61,28 @@ def scaled_style(style_str):
     return _STYLE_UNIT_RE.sub(replace_unit, style_str)
 
 
-def calculate_auto_ui_scale(logical_width, logical_height):
+def calculate_auto_ui_scale(logical_width, logical_height, device_pixel_ratio=1.0):
     """
-    根据 Qt 的逻辑可用分辨率计算 UI 缩放。
+    根据 Qt 的逻辑可用分辨率和设备像素比计算 UI 缩放。
 
-    High DPI 模式下 Qt Widgets 已工作在设备无关像素中，这里不再用 DPI 比例二次
-    修正，只按可用逻辑尺寸做保守压缩。
+    High DPI 模式下 Qt Widgets 使用设备无关像素。设备像素比仅用于识别屏幕的
+    实际分辨率，不直接叠加到控件尺寸，避免重复放大。
     """
     width = int(logical_width or 0)
     height = int(logical_height or 0)
+
+    try:
+        pixel_ratio = max(1.0, float(device_pixel_ratio or 1.0))
+    except (TypeError, ValueError):
+        pixel_ratio = 1.0
+
+    physical_width = int(round(width * pixel_ratio))
+    physical_height = int(round(height * pixel_ratio))
+
+    # 2K/4K 屏幕启用 125% 以上系统缩放时，逻辑空间会明显减少。使用紧凑档
+    # 可避免按钮和固定宽度控件挤占内容区域。
+    if pixel_ratio >= 1.25 and physical_width >= 2500 and physical_height >= 1300:
+        return 0.8, 10
 
     if width >= 2560 and height >= 1400:
         return 0.85, 10
