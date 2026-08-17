@@ -22,6 +22,40 @@ from i18n import tr
 from core.paths import external_path
 
 
+def _normalize_poc_text(text: str) -> str:
+    import re
+
+    return re.sub(r"\s+", " ", (text or "").strip())
+
+
+def _find_duplicate_poc(poc_dir, yaml_content: str):
+    """
+    在 POC 目录中查找与当前内容重复的 POC 文件。
+    """
+    import os
+    import re
+
+    target = _normalize_poc_text(yaml_content)
+    if not target:
+        return None
+
+    for name in sorted(os.listdir(str(poc_dir))):
+        if not name.lower().endswith((".yaml", ".yml")):
+            continue
+
+        path = os.path.join(str(poc_dir), name)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                existing = f.read()
+        except Exception:
+            continue
+
+        if _normalize_poc_text(existing) == target:
+            return path
+
+    return None
+
+
 class AIAssistantDialog(QDialog):
     """
     AI 助手弹窗 V2
@@ -227,6 +261,16 @@ class AIAssistantDialog(QDialog):
         os.makedirs(poc_dir, exist_ok=True)
 
         filepath = os.path.join(str(poc_dir), filename)
+
+        # 去重处理：POC 库中已存在相同内容的模板时，跳过重复导入
+        duplicate_path = _find_duplicate_poc(poc_dir, yaml_content)
+        if duplicate_path:
+            QMessageBox.information(
+                self,
+                tr("msg.file_exists"),
+                f"该 POC 已存在，已跳过重复导入：{os.path.basename(duplicate_path)}"
+            )
+            return
 
         # 检查文件是否存在
         if os.path.exists(filepath):
