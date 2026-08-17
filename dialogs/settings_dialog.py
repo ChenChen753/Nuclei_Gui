@@ -18,6 +18,7 @@ from i18n import tr
 from core.paths import is_frozen
 from core.ui_scale import scaled, scaled_style
 from core.settings_manager import get_settings
+from dialogs.proxy_settings_widget import ProxySettingsWidget
 from core.updater import (
     UpdateCheckThread, UpdateDownloadThread,
     get_current_version, PRESERVE_FILES, PRESERVE_DIRS,
@@ -93,6 +94,13 @@ class SettingsDialog(QDialog):
         self.scan_tab = QWidget()
         self.setup_scan_tab()
         self.tabs.addTab(self.scan_tab, tr("settings.tab.scan"))
+
+        # 独立代理设置
+        self.proxy_tab = QWidget()
+        proxy_layout = QVBoxLayout(self.proxy_tab)
+        self.proxy_settings_widget = ProxySettingsWidget()
+        proxy_layout.addWidget(self.proxy_settings_widget)
+        self.tabs.addTab(self.proxy_tab, tr("settings.tab_proxy"))
 
         # Tab 5: Nuclei 管理
         self.nuclei_tab = QWidget()
@@ -356,6 +364,7 @@ class SettingsDialog(QDialog):
         # 加载更新设置
         auto_update = self.settings.get_auto_check_update()
         self.auto_update_checkbox.setChecked(auto_update)
+        self.proxy_settings_widget.load_configurations(self.settings.get_proxy_configs())
 
     def save_and_close(self):
         """保存设置并关闭"""
@@ -368,6 +377,12 @@ class SettingsDialog(QDialog):
 
         # 保存更新设置
         self.settings.set_auto_check_update(self.auto_update_checkbox.isChecked())
+
+        try:
+            self.settings.save_proxy_configs(self.proxy_settings_widget.configurations())
+        except ValueError as error:
+            QMessageBox.warning(self, tr("msg.warning"), tr("settings.proxy.invalid", error=error))
+            return
 
         if new_lang != old_lang:
             init_language(new_lang)

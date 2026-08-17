@@ -5,6 +5,7 @@ import base64
 import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_FOFA, create_session, redact_proxy_credentials
 
 
 class FofaSearchThread(QThread):
@@ -49,6 +50,7 @@ class FofaClient:
         self.api_url = api_url.rstrip('/')
         self.email = email
         self.api_key = api_key
+        self._session = create_session(PROXY_SCOPE_FOFA)
     
     def search(self, query: str, size: int = 100) -> list:
         """
@@ -79,7 +81,7 @@ class FofaClient:
             params["key"] = self.api_key
         
         try:
-            response = requests.get(self.api_url, params=params, timeout=30)
+            response = self._session.get(self.api_url, params=params, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -120,9 +122,9 @@ class FofaClient:
             return results
             
         except requests.RequestException as e:
-            raise ValueError(tr("search.network_request_failed", error=str(e)))
+            raise ValueError(tr("search.network_request_failed", error=redact_proxy_credentials(e)))
         except Exception as e:
-            raise ValueError(tr("search.parse_response_failed", error=str(e)))
+            raise ValueError(tr("search.parse_response_failed", error=redact_proxy_credentials(e)))
     
     def test_connection(self) -> bool:
         """

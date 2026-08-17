@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QSplitter, QGroupBox, QSpinBox, QMessageBox, QCheckBox,
                              QProgressBar, QGridLayout, QPlainTextEdit, QDialog, QComboBox,
                              QToolBar, QAction, QFrame, QStackedWidget, QListWidget,
-                             QListWidgetItem, QSizePolicy, QScrollArea)
+                             QListWidgetItem, QSizePolicy, QScrollArea, QProgressDialog)
 from PyQt5.QtCore import Qt, pyqtSlot, QSettings, QSize, QUrl, QTimer, QCoreApplication, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon, QColor, QPainter, QBrush, QPen, QDesktopServices
 
@@ -192,7 +192,13 @@ def message_text(text: str) -> str:
 from core.poc_library import POCLibrary
 from core.nuclei_runner import NucleiScanThread
 from core.settings_manager import get_settings
-from core.target_utils import dedupe_targets, parse_targets_text
+from core.target_utils import (
+    dedupe_targets,
+    get_result_target_url,
+    parse_targets_text,
+    resolve_template_url,
+    substitute_template_url_variables,
+)
 from core.version import __version__, __author__
 
 # 导入弹窗组件
@@ -234,6 +240,53 @@ class POCLoadThread(QThread):
             self.error_signal.emit(str(exc))
 
 
+class POCImportThread(QThread):
+    """Import a POC directory without blocking the GUI event loop."""
+
+    discovered_signal = pyqtSignal(int)
+    progress_signal = pyqtSignal(int, int)
+    completed_signal = pyqtSignal(int, int, bool)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, poc_library, directory):
+        super().__init__()
+        self.poc_library = poc_library
+        self.directory = Path(directory)
+
+    def run(self):
+        try:
+            poc_files = []
+            for path in self.directory.rglob("*"):
+                if self.isInterruptionRequested():
+                    self.completed_signal.emit(0, 0, True)
+                    return
+                if path.is_file() and path.suffix.lower() in (".yaml", ".yml"):
+                    poc_files.append(path)
+
+            total = len(poc_files)
+            self.discovered_signal.emit(total)
+
+            imported = 0
+            failed = 0
+            cancelled = False
+            for index, path in enumerate(poc_files, start=1):
+                if self.isInterruptionRequested():
+                    cancelled = True
+                    break
+
+                result = self.poc_library.import_poc(str(path), auto_sync=True)
+                if result.get("success"):
+                    imported += 1
+                else:
+                    failed += 1
+                self.progress_signal.emit(index, total)
+
+            self.poc_library.invalidate_cache()
+            self.completed_signal.emit(imported, failed, cancelled)
+        except Exception as exc:
+            self.error_signal.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -261,6 +314,8 @@ class MainWindow(QMainWindow):
         self.all_poc_data = []
         self.all_scan_pocs = []
         self._poc_load_thread = None
+        self._poc_import_thread = None
+        self._poc_import_progress = None
         self._scan_poc_table_dirty = True
         self._scan_runtime_vuln_count = 0
         self._scan_runtime_severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
@@ -977,6 +1032,7 @@ class MainWindow(QMainWindow):
 
         # 使用 Tab 分组设置
         settings_tabs = QTabWidget()
+        self.settings_tabs = settings_tabs
         settings_tabs.setStyleSheet(scaled_style(f"""
             QTabWidget::pane {{
                 border: none;
@@ -1042,13 +1098,6 @@ class MainWindow(QMainWindow):
         form_layout.addWidget(self.settings_retries, row, 1)
         
         row += 1
-        # 代理设置
-        form_layout.addWidget(QLabel(tr("settings.proxy_server")), row, 0)
-        self.settings_proxy = QLineEdit()
-        self.settings_proxy.setPlaceholderText(tr("settings.proxy_placeholder"))
-        form_layout.addWidget(self.settings_proxy, row, 1)
-        
-        row += 1
         # 选项 - 使用水平布局
         options_label = QLabel(tr("settings.advanced_options"))
         options_label.setStyleSheet(f"font-weight: bold; color: {FORTRESS_COLORS['text_primary']};")
@@ -1082,6 +1131,16 @@ class MainWindow(QMainWindow):
         scan_layout.addStretch()
         
         settings_tabs.addTab(scan_tab, tr("settings.tab_scan_params"))
+
+        # 独立代理设置
+        from dialogs.proxy_settings_widget import ProxySettingsWidget
+
+        proxy_tab = QWidget()
+        proxy_layout = QVBoxLayout(proxy_tab)
+        proxy_layout.setContentsMargins(scaled(25), scaled(25), scaled(25), scaled(25))
+        self.proxy_settings_widget = ProxySettingsWidget()
+        proxy_layout.addWidget(self.proxy_settings_widget)
+        settings_tabs.addTab(proxy_tab, tr("settings.tab_proxy"))
 
         # Tab 2: DNSLog / OAST
         dnslog_tab = QWidget()
@@ -1581,6 +1640,7 @@ class MainWindow(QMainWindow):
         update_layout.addWidget(update_action_group)
         update_layout.addStretch()
 
+        self.settings_update_tab = update_tab
         settings_tabs.addTab(update_tab, tr("settings.tab_update"))
 
         # 存储下载信息
@@ -1891,6 +1951,7 @@ class MainWindow(QMainWindow):
         # 1. UI 初始化
         self.scan_results_data.clear()
         self.result_table.setRowCount(0)
+        self._reset_scan_result_filter_data()
         self.log_output.clear()
         self.progress_bar.setRange(0, 100)  # 设置确定模式
         self.progress_bar.setValue(0)
@@ -2329,11 +2390,8 @@ class MainWindow(QMainWindow):
             if self._show_localized_question(tr("update.new_version_found"), prompt, QMessageBox.No) == QMessageBox.Yes:
                 # 切换到主界面的设置页面，并选中更新设置 Tab
                 self._switch_page(5)  # 设置页面索引
-                # 找到设置页面中的 Tab 控件并切换到更新设置
-                if hasattr(self, 'settings_page'):
-                    tabs = self.settings_page.findChild(QTabWidget)
-                    if tabs:
-                        tabs.setCurrentIndex(5)  # 更新设置 Tab 索引
+                if hasattr(self, 'settings_tabs') and hasattr(self, 'settings_update_tab'):
+                    self.settings_tabs.setCurrentWidget(self.settings_update_tab)
 
     def _pause_selected_task(self):
         """暂停选中的任务"""
@@ -3200,6 +3258,7 @@ class MainWindow(QMainWindow):
 
         try:
             import requests
+            from core.network_proxy import PROXY_SCOPE_AI, create_session, redact_proxy_credentials
             # 构建请求
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -3216,7 +3275,7 @@ class MainWindow(QMainWindow):
             if not url.endswith("/chat/completions"):
                 url = f"{url}/chat/completions"
 
-            response = requests.post(url, headers=headers, json=data, timeout=15)
+            response = create_session(PROXY_SCOPE_AI).post(url, headers=headers, json=data, timeout=15)
 
             if response.status_code == 200:
                 QMessageBox.information(self, tr("msg.success"), tr("settings.api_test_success"))
@@ -3230,7 +3289,7 @@ class MainWindow(QMainWindow):
         except requests.exceptions.Timeout:
             QMessageBox.warning(self, tr("msg.failure"), tr("settings.connection_timeout"))
         except Exception as e:
-            QMessageBox.warning(self, tr("msg.failure"), tr("settings.connection_failed", error=str(e)))
+            QMessageBox.warning(self, tr("msg.failure"), tr("settings.connection_failed", error=redact_proxy_credentials(e)))
 
     def _save_ai_preset_config(self):
         """保存当前AI预设配置"""
@@ -3523,7 +3582,6 @@ class MainWindow(QMainWindow):
             self.settings_rate_limit.setValue(scan_config.get("rate_limit", 150))
             self.settings_bulk_size.setValue(scan_config.get("bulk_size", 25))
             self.settings_retries.setValue(scan_config.get("retries", 0))
-            self.settings_proxy.setText(scan_config.get("proxy", ""))
             self.settings_follow_redirects.setChecked(scan_config.get("follow_redirects", False))
             self.settings_stop_at_first.setChecked(scan_config.get("stop_at_first_match", False))
             self.settings_no_httpx.setChecked(scan_config.get("no_httpx", False))
@@ -3539,6 +3597,9 @@ class MainWindow(QMainWindow):
                 self.settings_oast_cache.setValue(scan_config.get("oast_cache_size", 5000))
                 self.settings_oast_eviction.setValue(scan_config.get("oast_eviction", 60))
                 self.settings_oast_adapt_legacy.setChecked(scan_config.get("oast_adapt_legacy", True))
+
+        if hasattr(self, 'proxy_settings_widget'):
+            self.proxy_settings_widget.load_configurations(self.settings.get_proxy_configs())
         
         # FOFA 配置
         fofa_config = self.settings.get_fofa_config()
@@ -3568,7 +3629,6 @@ class MainWindow(QMainWindow):
                 "rate_limit": self.settings_rate_limit.value(),
                 "bulk_size": self.settings_bulk_size.value(),
                 "retries": self.settings_retries.value(),
-                "proxy": self.settings_proxy.text().strip(),
                 "follow_redirects": self.settings_follow_redirects.isChecked(),
                 "stop_at_first_match": self.settings_stop_at_first.isChecked(),
                 "no_httpx": self.settings_no_httpx.isChecked(),
@@ -3583,6 +3643,13 @@ class MainWindow(QMainWindow):
                 "oast_eviction": self.settings_oast_eviction.value() if hasattr(self, 'settings_oast_eviction') else 60,
                 "oast_adapt_legacy": self.settings_oast_adapt_legacy.isChecked() if hasattr(self, 'settings_oast_adapt_legacy') else True,
             })
+
+        if hasattr(self, 'proxy_settings_widget'):
+            try:
+                self.settings.save_proxy_configs(self.proxy_settings_widget.configurations())
+            except ValueError as error:
+                QMessageBox.warning(self, tr("msg.warning"), tr("settings.proxy.invalid", error=error))
+                return
         
         # 保存 FOFA 配置
         if hasattr(self, 'settings_fofa_url'):
@@ -3810,7 +3877,7 @@ class MainWindow(QMainWindow):
         dialog = FofaDialog(self, query)
         if dialog.exec_() == QDialog.Accepted:
             # 将选中的目标导入到扫描目标（替换模式）
-            targets = dialog.get_selected_targets()
+            targets = dedupe_targets(dialog.get_selected_targets())
             if targets:
                 new_targets = "\n".join(targets)
                 self.txt_targets.setPlainText(new_targets)  # 替换而不是追加
@@ -3984,6 +4051,7 @@ class MainWindow(QMainWindow):
             self.history_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Fixed)
             self.history_table.setColumnWidth(i, scaled(100))
         self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.history_table.setAlternatingRowColors(True)
         # 增加行高，让按钮显示不拥挤
         self.history_table.verticalHeader().setDefaultSectionSize(scaled(45))
@@ -4261,6 +4329,8 @@ class MainWindow(QMainWindow):
         from dialogs.all_scan_history_dialog import AllScanHistoryDialog
         dialog = AllScanHistoryDialog(self, colors=FORTRESS_COLORS)
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(getattr(self, "history_table", None))
     
     def show_scan_detail(self, scan_id):
         """显示扫描详情"""
@@ -4272,6 +4342,8 @@ class MainWindow(QMainWindow):
         
         if not vulns:
             QMessageBox.information(self, tr("history.scan_detail"), tr("history.no_vulns_found"))
+            from core.fortress_style import clear_table_interaction_state
+            clear_table_interaction_state(getattr(self, "history_table", None))
             return
         
         # 使用 QDialog + QTableWidget 显示
@@ -4307,6 +4379,7 @@ class MainWindow(QMainWindow):
         table.setColumnWidth(5, scaled(140))  # 操作列稍宽
         
         table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setAlternatingRowColors(True)
         table.setRowCount(len(vulns))
         
@@ -4432,6 +4505,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row)
         
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(getattr(self, "history_table", None))
 
     def _show_payload_detail(self, method, body):
         """显示完整 Payload 详情 - 类似编辑器的窗口"""
@@ -4510,11 +4585,12 @@ class MainWindow(QMainWindow):
         full_request = ""
         curl_command = ""
         response_data = ""
+        raw_result = raw_data if isinstance(raw_data, dict) else {}
         
-        if raw_data:
+        if raw_result:
             # 优先使用 nuclei.exe 的格式
-            if raw_data.get('request'):
-                full_request = raw_data['request']
+            if raw_result.get('request'):
+                full_request = raw_result['request']
                 first_line = full_request.split('\r\n')[0] if '\r\n' in full_request else full_request.split('\n')[0]
                 if first_line:
                     parts = first_line.split(' ')
@@ -4525,33 +4601,19 @@ class MainWindow(QMainWindow):
                 elif '\n\n' in full_request:
                     body = full_request.split('\n\n', 1)[1] if len(full_request.split('\n\n')) > 1 else ""
             else:
-                method = raw_data.get('request_method', 'GET')
-                body = raw_data.get('request_body', '')
+                method = raw_result.get('request_method', 'GET')
+                body = raw_result.get('request_body', '')
             
-            curl_command = raw_data.get('curl-command', '')
-            response_data = raw_data.get('response', '')
+            curl_command = raw_result.get('curl-command', '')
+            response_data = raw_result.get('response', '')
         
         # === 从 POC 文件解析Full request链 ===
         poc_requests_text = ""
-        poc_path = vuln_data.get('template_path') or (raw_data.get('template-path') if raw_data else None)
+        poc_path = vuln_data.get('template_path') or raw_result.get('template-path')
         
-        # 从 matched_at 提取实际的 Hostname
+        # Nuclei 的 url 字段是新建扫描输入的原始目标，matched-at 是拼接后的命中 URL。
         matched_url = vuln_data.get('matched_at', '')
-        actual_hostname = ""
-        actual_base_url = ""
-        if matched_url:
-            try:
-                from urllib.parse import urlparse
-                parsed = urlparse(matched_url)
-                # 获取 host:port 格式
-                if parsed.port and parsed.port not in [80, 443]:
-                    actual_hostname = f"{parsed.hostname}:{parsed.port}"
-                else:
-                    actual_hostname = parsed.hostname or ""
-                # 获取完整的 base URL (scheme://host:port)
-                actual_base_url = f"{parsed.scheme}://{actual_hostname}"
-            except:
-                pass
+        target_url = get_result_target_url(vuln_data, raw_result) or matched_url
         
         if poc_path and os.path.exists(poc_path):
             try:
@@ -4571,11 +4633,7 @@ class MainWindow(QMainWindow):
                         if raw_requests:
                             for raw_req in raw_requests:
                                 # 替换模板变量
-                                req_content = raw_req.strip()
-                                if actual_hostname:
-                                    req_content = req_content.replace('{{Hostname}}', actual_hostname)
-                                    req_content = req_content.replace('{{BaseURL}}', actual_base_url)
-                                    req_content = req_content.replace('{{Host}}', actual_hostname)
+                                req_content = substitute_template_url_variables(target_url, raw_req.strip())
                                 
                                 request_steps.append({
                                     'step': step_num,
@@ -4592,14 +4650,10 @@ class MainWindow(QMainWindow):
                                 paths = [paths]
                             for path in paths:
                                 # 替换模板变量
-                                actual_path = path
+                                actual_path = resolve_template_url(target_url, path)
                                 actual_body = item.get('body', '')
-                                if actual_hostname:
-                                    actual_path = actual_path.replace('{{Hostname}}', actual_hostname)
-                                    actual_path = actual_path.replace('{{BaseURL}}', actual_base_url)
-                                    if actual_body:
-                                        actual_body = actual_body.replace('{{Hostname}}', actual_hostname)
-                                        actual_body = actual_body.replace('{{BaseURL}}', actual_base_url)
+                                if actual_body:
+                                    actual_body = substitute_template_url_variables(target_url, actual_body)
                                 
                                 request_steps.append({
                                     'step': step_num,
@@ -4751,7 +4805,7 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(btn_copy_all)
         
         # 编辑 POC
-        poc_path = vuln_data.get('template_path') or raw_data.get('template-path')
+        poc_path = vuln_data.get('template_path') or raw_result.get('template-path')
         if poc_path and os.path.exists(poc_path):
             from dialogs.poc_editor_dialog import POCEditorDialog
             btn_edit = self._create_fortress_button(tr("report.edit_poc"), "info")
@@ -4920,13 +4974,13 @@ class MainWindow(QMainWindow):
         toolbar_layout = QHBoxLayout(toolbar_container)
         toolbar_layout.setContentsMargins(scaled(15), scaled(15), scaled(15), scaled(15))
         
-        btn_import_file = self._create_fortress_button(tr("poc.import_file"), "info")
-        btn_import_file.clicked.connect(self.import_poc_file)
-        toolbar_layout.addWidget(btn_import_file)
+        self.btn_import_poc_file = self._create_fortress_button(tr("poc.import_file"), "info")
+        self.btn_import_poc_file.clicked.connect(self.import_poc_file)
+        toolbar_layout.addWidget(self.btn_import_poc_file)
         
-        btn_import_dir = self._create_fortress_button(tr("poc.import_dir"), "info")
-        btn_import_dir.clicked.connect(self.import_poc_dir)
-        toolbar_layout.addWidget(btn_import_dir)
+        self.btn_import_poc_dir = self._create_fortress_button(tr("poc.import_dir"), "info")
+        self.btn_import_poc_dir.clicked.connect(self.import_poc_dir)
+        toolbar_layout.addWidget(self.btn_import_poc_dir)
         
         btn_sync = self._create_fortress_button(tr("poc.online_sync"), "primary")
         btn_sync.setToolTip(tr("poc.sync_tooltip"))
@@ -5020,6 +5074,7 @@ class MainWindow(QMainWindow):
         self.poc_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.poc_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.poc_table.setSelectionMode(QTableWidget.ExtendedSelection)
+        self.poc_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.poc_table.setAlternatingRowColors(True)
         self.poc_table.verticalHeader().setVisible(False)
         self.poc_table.doubleClicked.connect(self.on_poc_double_clicked)
@@ -5045,6 +5100,7 @@ class MainWindow(QMainWindow):
             return
 
         self.poc_table.setEnabled(False)
+        self._set_poc_import_controls_enabled(False)
         self.statusBar().showMessage("Loading POCs...")
 
         self._poc_load_thread = POCLoadThread(self.poc_library)
@@ -5056,6 +5112,8 @@ class MainWindow(QMainWindow):
     def _cleanup_poc_load_thread(self):
         self.poc_table.setEnabled(True)
         self._poc_load_thread = None
+        if not self._poc_import_thread or not self._poc_import_thread.isRunning():
+            self._set_poc_import_controls_enabled(True)
 
     def _on_poc_list_loaded(self, pocs):
         self.all_poc_data = pocs
@@ -5406,17 +5464,106 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, tr("msg.failure"), tr("poc.import_failed", error=result['error']))
 
     def import_poc_dir(self):
+        if self._poc_import_thread and self._poc_import_thread.isRunning():
+            QMessageBox.information(self, tr("msg.hint"), tr("poc.batch_import_running"))
+            return
+
         dir_path = QFileDialog.getExistingDirectory(self, tr("poc.select_dir"))
-        if dir_path:
-            count = 0
-            for root, dirs, files in os.walk(dir_path):
-                for file in files:
-                    if file.endswith(('.yaml', '.yml')):
-                        full_path = os.path.join(root, file)
-                        if self.poc_library.import_poc(full_path, auto_sync=True)['success']:
-                            count += 1
-            QMessageBox.information(self, tr("msg.done"), tr("poc.batch_import_done", count=count))
+        if not dir_path:
+            return
+
+        self._set_poc_import_controls_enabled(False)
+        self._poc_import_progress = QProgressDialog(
+            tr("poc.batch_import_scanning"),
+            tr("common.cancel"),
+            0,
+            0,
+            self,
+        )
+        self._poc_import_progress.setWindowTitle(tr("poc.import_dir"))
+        self._poc_import_progress.setWindowModality(Qt.WindowModal)
+        self._poc_import_progress.setMinimumDuration(0)
+        self._poc_import_progress.setAutoClose(False)
+        self._poc_import_progress.setAutoReset(False)
+        self._poc_import_progress.canceled.connect(self._cancel_poc_import)
+        self._poc_import_progress.show()
+
+        self._poc_import_thread = POCImportThread(self.poc_library, dir_path)
+        self._poc_import_thread.discovered_signal.connect(self._on_poc_import_discovered)
+        self._poc_import_thread.progress_signal.connect(self._on_poc_import_progress)
+        self._poc_import_thread.completed_signal.connect(self._on_poc_import_completed)
+        self._poc_import_thread.error_signal.connect(self._on_poc_import_failed)
+        self._poc_import_thread.finished.connect(self._cleanup_poc_import_thread)
+        self._poc_import_thread.start()
+
+    def _set_poc_import_controls_enabled(self, enabled):
+        for name in ("btn_import_poc_file", "btn_import_poc_dir"):
+            button = getattr(self, name, None)
+            if button:
+                button.setEnabled(enabled)
+
+    def _on_poc_import_discovered(self, total):
+        progress = self._poc_import_progress
+        if not progress:
+            return
+        progress.setRange(0, max(total, 1))
+        progress.setValue(0)
+        if total:
+            progress.setLabelText(tr("poc.batch_import_progress", current=0, total=total))
+
+    def _on_poc_import_progress(self, current, total):
+        progress = self._poc_import_progress
+        if not progress:
+            return
+        progress.setRange(0, max(total, 1))
+        progress.setValue(current)
+        progress.setLabelText(tr("poc.batch_import_progress", current=current, total=total))
+
+    def _cancel_poc_import(self):
+        thread = self._poc_import_thread
+        if thread and thread.isRunning():
+            thread.requestInterruption()
+            if self._poc_import_progress:
+                self._poc_import_progress.setLabelText(tr("poc.batch_import_cancelling"))
+
+    def _close_poc_import_progress(self):
+        if self._poc_import_progress:
+            self._poc_import_progress.close()
+            self._poc_import_progress.deleteLater()
+            self._poc_import_progress = None
+        self._set_poc_import_controls_enabled(True)
+
+    def _on_poc_import_completed(self, imported, failed, cancelled):
+        self._close_poc_import_progress()
+        if imported:
             self.refresh_poc_list()
+
+        if cancelled:
+            QMessageBox.information(
+                self,
+                tr("msg.hint"),
+                tr("poc.batch_import_cancelled", count=imported),
+            )
+        elif imported == 0 and failed == 0:
+            QMessageBox.information(self, tr("msg.hint"), tr("poc.batch_import_no_files"))
+        elif failed:
+            QMessageBox.warning(
+                self,
+                tr("msg.done"),
+                tr("poc.batch_import_failed_summary", success=imported, failed=failed),
+            )
+        else:
+            QMessageBox.information(self, tr("msg.done"), tr("poc.batch_import_done", count=imported))
+
+    def _on_poc_import_failed(self, error):
+        self._close_poc_import_progress()
+        QMessageBox.warning(self, tr("msg.failure"), tr("poc.import_failed", error=error))
+
+    def _cleanup_poc_import_thread(self):
+        thread = self._poc_import_thread
+        self._poc_import_thread = None
+        if thread:
+            thread.deleteLater()
     
     def open_poc_sync_dialog(self):
         """打开 POC 在线同步弹窗"""
@@ -5441,6 +5588,8 @@ class MainWindow(QMainWindow):
         
         dialog = POCEditorDialog(poc_path, self, colors=FORTRESS_COLORS)
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(self.poc_table)
     
     def open_poc_test(self):
         """打开 POC 快速测试弹窗"""
@@ -5478,6 +5627,8 @@ class MainWindow(QMainWindow):
         from dialogs.poc_editor_dialog import POCEditorDialog
         dialog = POCEditorDialog(poc_path, self, colors=FORTRESS_COLORS)
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(self.poc_table)
 
     # ================= 扫描任务页面 =================
     def setup_scan_tab(self):
@@ -5613,6 +5764,38 @@ class MainWindow(QMainWindow):
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
 
+        result_filter_layout = QHBoxLayout()
+        result_filter_layout.setContentsMargins(scaled(12), scaled(10), scaled(12), scaled(6))
+        result_filter_layout.setSpacing(scaled(10))
+
+        self.scan_result_search_input = QLineEdit()
+        self.scan_result_search_input.setPlaceholderText(tr("scan.result_search_placeholder"))
+        self.scan_result_search_input.setClearButtonEnabled(True)
+        self.scan_result_search_input.setMinimumWidth(scaled(220))
+        self.scan_result_search_input.setMaximumWidth(scaled(520))
+        result_filter_layout.addWidget(self.scan_result_search_input, 1)
+
+        self.scan_result_severity_filter = QComboBox()
+        self.scan_result_severity_filter.addItem(tr("common.all"), "")
+        for severity in ("critical", "high", "medium", "low", "info"):
+            self.scan_result_severity_filter.addItem(display_severity(severity), severity)
+        self.scan_result_severity_filter.setMinimumWidth(scaled(120))
+        self.scan_result_severity_filter.setMaximumWidth(scaled(160))
+        result_filter_layout.addWidget(self.scan_result_severity_filter)
+
+        self.scan_result_deep_search = QCheckBox(tr("scan.search_request_response"))
+        self.scan_result_deep_search.setToolTip(tr("scan.result_deep_search_tooltip"))
+        result_filter_layout.addWidget(self.scan_result_deep_search)
+
+        self.scan_result_filter_count = QLabel(tr("scan.result_filter_count", shown=0, total=0))
+        self.scan_result_filter_count.setStyleSheet(
+            scaled_style(f"color: {FORTRESS_COLORS['text_secondary']}; font-size: 12px;")
+        )
+        self.scan_result_filter_count.setMinimumWidth(scaled(90))
+        self.scan_result_filter_count.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        result_filter_layout.addWidget(self.scan_result_filter_count)
+        table_layout.addLayout(result_filter_layout)
+
         self.result_table = QTableWidget()
         self.result_table.setColumnCount(6)
         self.result_table.setHorizontalHeaderLabels([tr("scan.col_status"), tr("scan.col_vuln_name"), tr("scan.col_severity"), tr("scan.col_target"), tr("scan.col_found_time"), tr("scan.col_action")])
@@ -5634,6 +5817,7 @@ class MainWindow(QMainWindow):
         
         self.result_table.verticalHeader().setVisible(False)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setAlternatingRowColors(True)
         self.result_table.setToolTip(tr("scan.double_click_tooltip"))
         self.result_table.doubleClicked.connect(self.show_result_detail)
@@ -5645,11 +5829,20 @@ class MainWindow(QMainWindow):
         
         table_layout.addWidget(self.result_table)
         layout.addWidget(table_container, 1)
-        
-        # 存储完整结果数据
+
         self.scan_results_data = []
-        
-        # ===== 日志区域 =====
+        self._scan_result_search_cache = []
+        self._scan_result_filter_generation = 0
+        self._scan_result_filter_state = None
+        self._scan_result_visible_count = 0
+        self._scan_result_filter_timer = QTimer(self)
+        self._scan_result_filter_timer.setSingleShot(True)
+        self._scan_result_filter_timer.setInterval(250)
+        self._scan_result_filter_timer.timeout.connect(self._start_scan_result_filter)
+        self.scan_result_search_input.textChanged.connect(self._schedule_scan_result_filter)
+        self.scan_result_severity_filter.currentIndexChanged.connect(self._schedule_scan_result_filter)
+        self.scan_result_deep_search.stateChanged.connect(self._on_scan_result_deep_search_changed)
+
         log_container = QWidget()
         log_container.setMaximumHeight(scaled(150))
         log_container.setStyleSheet(scaled_style(f"""
@@ -5687,7 +5880,167 @@ class MainWindow(QMainWindow):
         
         # 完整日志存储
         self.full_log = deque(maxlen=3000)
-    
+
+    def _schedule_scan_result_filter(self, *args):
+        if hasattr(self, "_scan_result_filter_timer"):
+            self._scan_result_filter_timer.start()
+
+    def _on_scan_result_deep_search_changed(self, state):
+        if not self.scan_result_deep_search.isChecked():
+            for entry in self._scan_result_search_cache:
+                if entry:
+                    entry["deep"] = None
+        self._schedule_scan_result_filter()
+
+    def _scan_result_filter_values(self):
+        query = self.scan_result_search_input.text().strip().lower()
+        terms = tuple(term for term in query.split() if term)
+        severity = self.scan_result_severity_filter.currentData() or ""
+        include_raw = self.scan_result_deep_search.isChecked()
+        return terms, severity, include_raw
+
+    @staticmethod
+    def _scan_result_value_text(value):
+        if value is None:
+            return ""
+        if isinstance(value, dict):
+            return " ".join(
+                f"{key} {MainWindow._scan_result_value_text(item)}"
+                for key, item in value.items()
+            )
+        if isinstance(value, (list, tuple, set)):
+            return " ".join(MainWindow._scan_result_value_text(item) for item in value)
+        return str(value)
+
+    def _build_scan_result_basic_search_text(self, result):
+        info = result.get("info", {}) or {}
+        values = [
+            result.get("template-id", result.get("templateID", "")),
+            result.get("matched-at", result.get("matched", "")),
+            result.get("host", ""),
+            result.get("ip", ""),
+            result.get("matcher-name", ""),
+            result.get("template-path", result.get("template_path", "")),
+            info.get("name", ""),
+            info.get("severity", ""),
+            info.get("tags", ""),
+            info.get("description", ""),
+        ]
+        return "\n".join(self._scan_result_value_text(value) for value in values).lower()
+
+    def _build_scan_result_deep_search_text(self, result):
+        raw_keys = (
+            "request", "response", "curl-command", "curl_command",
+            "request_method", "request_body", "response_body",
+            "extracted-results", "interaction", "raw", "raw_json",
+        )
+        remaining = 256 * 1024
+        parts = []
+        for key in raw_keys:
+            if remaining <= 0:
+                break
+            value = self._scan_result_value_text(result.get(key))
+            if not value:
+                continue
+            value = value[:remaining]
+            parts.append(value)
+            remaining -= len(value)
+        return "\n".join(parts).lower()
+
+    def _ensure_scan_result_search_cache(self, row, result):
+        while len(self._scan_result_search_cache) <= row:
+            self._scan_result_search_cache.append(None)
+        entry = self._scan_result_search_cache[row]
+        if entry is None:
+            entry = {
+                "basic": self._build_scan_result_basic_search_text(result),
+                "deep": None,
+            }
+            self._scan_result_search_cache[row] = entry
+        return entry
+
+    def _scan_result_matches_filter(self, row, result, terms, severity, include_raw):
+        result_severity = str((result.get("info", {}) or {}).get("severity", "")).lower()
+        if severity and result_severity != severity:
+            return False
+        if not terms:
+            return True
+
+        entry = self._ensure_scan_result_search_cache(row, result)
+        search_text = entry["basic"]
+        if include_raw:
+            if entry["deep"] is None:
+                entry["deep"] = self._build_scan_result_deep_search_text(result)
+            search_text = f"{search_text}\n{entry['deep']}"
+        return all(term in search_text for term in terms)
+
+    def _start_scan_result_filter(self):
+        self._scan_result_filter_generation += 1
+        generation = self._scan_result_filter_generation
+        terms, severity, include_raw = self._scan_result_filter_values()
+        self._scan_result_filter_state = {
+            "generation": generation,
+            "index": 0,
+            "shown": 0,
+            "terms": terms,
+            "severity": severity,
+            "include_raw": include_raw,
+        }
+        self._process_scan_result_filter_batch(generation)
+
+    def _process_scan_result_filter_batch(self, generation):
+        state = self._scan_result_filter_state
+        if not state or generation != self._scan_result_filter_generation:
+            return
+
+        total = min(len(self.scan_results_data), self.result_table.rowCount())
+        start = state["index"]
+        end = min(start + 100, total)
+        for row in range(start, end):
+            visible = self._scan_result_matches_filter(
+                row,
+                self.scan_results_data[row],
+                state["terms"],
+                state["severity"],
+                state["include_raw"],
+            )
+            self.result_table.setRowHidden(row, not visible)
+            if visible:
+                state["shown"] += 1
+
+        state["index"] = end
+        self.scan_result_filter_count.setText(
+            tr("scan.result_filter_count", shown=state["shown"], total=total)
+        )
+
+        if end < total:
+            QTimer.singleShot(0, lambda current=generation: self._process_scan_result_filter_batch(current))
+        else:
+            self._scan_result_visible_count = state["shown"]
+            self._scan_result_filter_state = None
+
+    def _apply_scan_result_filter_to_row(self, row, result):
+        terms, severity, include_raw = self._scan_result_filter_values()
+        visible = self._scan_result_matches_filter(row, result, terms, severity, include_raw)
+        self.result_table.setRowHidden(row, not visible)
+        if visible:
+            self._scan_result_visible_count += 1
+        self.scan_result_filter_count.setText(
+            tr(
+                "scan.result_filter_count",
+                shown=self._scan_result_visible_count,
+                total=self.result_table.rowCount(),
+            )
+        )
+
+    def _reset_scan_result_filter_data(self):
+        self._scan_result_filter_generation += 1
+        self._scan_result_filter_state = None
+        self._scan_result_search_cache = []
+        self._scan_result_visible_count = 0
+        if hasattr(self, "scan_result_filter_count"):
+            self.scan_result_filter_count.setText(tr("scan.result_filter_count", shown=0, total=0))
+
     def _setup_hidden_scan_config(self):
         """设置隐藏的扫描配置组件（用于数据存储）"""
         # 目标输入（隐藏）
@@ -6023,6 +6376,7 @@ class MainWindow(QMainWindow):
         self.log_output.clear()
         self.full_log = deque(maxlen=3000)
         self.scan_results_data = []
+        self._reset_scan_result_filter_data()
         self._reset_scan_runtime_metrics()
         self._load_historical_scan_metrics()
 
@@ -6160,6 +6514,7 @@ class MainWindow(QMainWindow):
         self.result_table.setRowHeight(row, scaled(50))
 
         self.scan_results_data.append(result)
+        self._apply_scan_result_filter_to_row(row, result)
         self._scan_runtime_vuln_count += 1
         severity_key = str(severity).lower()
         if severity_key in self._scan_runtime_severity_counts:
@@ -6434,6 +6789,8 @@ Description: {description}"""
         layout.addLayout(btn_row)
         
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(getattr(self, "result_table", None))
     
 
     def stop_scan(self):
@@ -6715,6 +7072,8 @@ Description: {description}"""
         layout.addWidget(btn_close)
         
         dialog.exec_()
+        from core.fortress_style import clear_table_interaction_state
+        clear_table_interaction_state(getattr(self, "result_table", None))
 
 # 全局异常捕获
 def install_exception_hook():
@@ -6839,6 +7198,8 @@ if __name__ == "__main__":
         pass
     
     app = QApplication(sys.argv)
+    from core.fortress_style import install_focus_rect_suppression
+    install_focus_rect_suppression(app)
 
     # 获取屏幕信息和系统 DPI 缩放
     from PyQt5.QtWidgets import QDesktopWidget

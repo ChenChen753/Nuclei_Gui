@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from i18n import tr, init_language
+from core.network_proxy import PROXY_SCOPE_UPDATE, create_session, redact_proxy_credentials
 from core.paths import external_path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -63,20 +64,10 @@ def download_with_callback(callback):
         print_progress = original_print_progress
 
 
-def create_session(proxies=None, trust_env=False):
-    """创建下载会话，统一 User-Agent 和代理行为。"""
-    session = requests.Session()
-    session.headers.update({"User-Agent": USER_AGENT})
-    session.trust_env = trust_env
-    if proxies:
-        session.proxies.update(proxies)
-    return session
-
-
 def get_latest_version():
     """获取最新 Nuclei 版本，失败时使用已知稳定版本。"""
     try:
-        session = create_session(trust_env=False)
+        session = create_session(PROXY_SCOPE_UPDATE, headers={"User-Agent": USER_AGENT})
         response = session.get(LATEST_RELEASE_API, timeout=20)
         response.raise_for_status()
         tag_name = response.json().get("tag_name", "").strip()
@@ -144,78 +135,59 @@ def download_with_progress():
         "https://download.fastgit.org"
     ]
     
-    # 代理配置 - 优先直连
-    proxy_configs = [
-        ("direct", None, False),
-        ("system", None, True),
-        ("127.0.0.1:7890", {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}, False),
-        ("127.0.0.1:1080", {"http": "http://127.0.0.1:1080", "https": "http://127.0.0.1:1080"}, False),
-        ("127.0.0.1:8080", {"http": "http://127.0.0.1:8080", "https": "http://127.0.0.1:8080"}, False),
-    ]
-    
     print_progress(tr("download.starting"), 10)
+    session = create_session(PROXY_SCOPE_UPDATE, headers={"User-Agent": USER_AGENT})
     
     for mirror_idx, mirror in enumerate(mirror_sites):
         download_url = f"{mirror}/projectdiscovery/nuclei/releases/download/{version}/{filename}"
         print_progress(tr("download.trying_mirror", mirror=mirror), 15 + mirror_idx * 5)
-        
-        for proxy_name, proxies, trust_env in proxy_configs:
-            tmp_path = None
-            try:
-                session = create_session(proxies, trust_env)
-                if proxies:
-                    print_progress(tr("download.using_proxy", proxies=proxies))
-                else:
-                    print_progress(tr("download.direct_connect"))
-                
-                # 开始下载
-                response = session.get(download_url, stream=True, timeout=60, allow_redirects=True)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                
-                print_progress(tr("download.downloading_file"), 30)
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
-                    downloaded = 0
-                    last_percent = 29
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            tmp_file.write(chunk)
-                            downloaded += len(chunk)
-                            
-                            if total_size > 0:
-                                percent = min(90, 30 + int((downloaded / total_size) * 60))
-                                if percent > last_percent:
-                                    last_percent = percent
-                                    print_progress(tr("download.downloading_progress", downloaded=downloaded, total=total_size), percent)
-                    
-                    tmp_path = tmp_file.name
-                
-                print_progress(tr("download.extracting"), 90)
-                
-                final_path = install_from_zip(Path(tmp_path), bin_dir, binary_name, system)
-                if final_path:
-                    print_progress(tr("download.install_complete", path=final_path), 100)
 
-                    return True
-                
-                if tmp_path:
+        tmp_path = None
+        try:
+            response = session.get(download_url, stream=True, timeout=60, allow_redirects=True)
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+
+            print_progress(tr("download.downloading_file"), 30)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+                downloaded = 0
+                last_percent = 29
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        tmp_file.write(chunk)
+                        downloaded += len(chunk)
+
+                        if total_size > 0:
+                            percent = min(90, 30 + int((downloaded / total_size) * 60))
+                            if percent > last_percent:
+                                last_percent = percent
+                                print_progress(tr("download.downloading_progress", downloaded=downloaded, total=total_size), percent)
+
+                tmp_path = tmp_file.name
+
+            print_progress(tr("download.extracting"), 90)
+
+            final_path = install_from_zip(Path(tmp_path), bin_dir, binary_name, system)
+            if final_path:
+                print_progress(tr("download.install_complete", path=final_path), 100)
+                return True
+
+            print_progress(tr("download.nuclei_not_found_in_zip"), 0)
+            return False
+
+        except requests.exceptions.RequestException as e:
+            print_progress(tr("download.network_error", error=redact_proxy_credentials(e)))
+            continue
+        except Exception as e:
+            print_progress(tr("download.failed", error=redact_proxy_credentials(e)))
+            continue
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
                     os.unlink(tmp_path)
-                print_progress(tr("download.nuclei_not_found_in_zip"), 0)
-                return False
-                
-            except requests.exceptions.RequestException as e:
-                print_progress(tr("download.network_error", error=e))
-                continue
-            except Exception as e:
-                print_progress(tr("download.failed", error=e))
-                continue
-            finally:
-                if tmp_path and os.path.exists(tmp_path):
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
+                except OSError:
+                    pass
     
     print_progress(tr("download.all_methods_failed"), 0)
     

@@ -10,6 +10,7 @@ import signal
 from PyQt5.QtCore import QThread, pyqtSignal
 from i18n import tr
 from core.oast_manager import cleanup_oast_plan, prepare_oast_scan
+from core.network_proxy import PROXY_SCOPE_SCAN, build_subprocess_environment
 from core.paths import external_path, log_dir
 from core.target_utils import dedupe_targets
 
@@ -340,7 +341,7 @@ class NucleiScanThread(QThread):
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             
-            env = os.environ.copy()
+            env = build_subprocess_environment(PROXY_SCOPE_SCAN)
             bin_dir = str(external_path('bin'))
             env["PATH"] = bin_dir + os.pathsep + env["PATH"]
             env["PYTHONIOENCODING"] = "utf-8"

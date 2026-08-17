@@ -4,6 +4,7 @@
 """
 import json
 import os
+import re
 
 from core.paths import resource_path
 
@@ -17,6 +18,17 @@ SUPPORTED_LANGUAGES = {
 _translations = {}
 _current_language = 'zh_CN'
 _translations_dir = str(resource_path("i18n"))
+
+_ESCAPED_CRLF_RE = re.compile(r"\\+r\\+n")
+_ESCAPED_NEWLINE_RE = re.compile(r"\\+n")
+
+
+def _normalize_translation_text(text):
+    """Convert legacy escaped newline sequences in translation resources."""
+    if not isinstance(text, str):
+        return text
+    text = _ESCAPED_CRLF_RE.sub("\n", text)
+    return _ESCAPED_NEWLINE_RE.sub("\n", text)
 
 
 def init_language(lang_code='zh_CN'):
@@ -52,7 +64,7 @@ def tr(key, **kwargs):
     返回:
         翻译后的文本，如果 key 不存在则返回 key 本身
     """
-    text = _translations.get(key, key)
+    text = _normalize_translation_text(_translations.get(key, key))
     if kwargs:
         try:
             text = text.format(**kwargs)

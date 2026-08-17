@@ -17,6 +17,7 @@ from core.settings_manager import get_settings
 from core.fofa_client import FofaSearchThread
 from core.history_manager import get_history_manager
 from core.ui_scale import scaled, scaled_style
+from core.target_utils import dedupe_targets
 from i18n import tr
 
 
@@ -371,13 +372,15 @@ class FofaDialog(QDialog):
     
     def import_selected(self):
         """导入选中的目标"""
-        self.selected_targets = []
+        selected_targets = []
         for i in range(self.result_table.rowCount()):
             item = self.result_table.item(i, 0)
             if item and item.checkState() == Qt.Checked:
                 target = item.data(Qt.UserRole)
                 if target:
-                    self.selected_targets.append(target)
+                    selected_targets.append(target)
+
+        self.selected_targets = dedupe_targets(selected_targets)
         
         if not self.selected_targets:
             QMessageBox.warning(self, tr("msg.hint"), tr("fofa.please_select_target"))

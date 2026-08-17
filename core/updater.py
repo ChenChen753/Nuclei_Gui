@@ -15,12 +15,13 @@ import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_UPDATE, create_session, redact_proxy_credentials
 from core.paths import app_dir, log_dir, user_data_dir
 
 # 项目信息
 GITHUB_REPO = "ChenChen753/Nuclei_Gui"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "2.5.6"
+CURRENT_VERSION = "2.6.0"
 
 PACKAGE_SOURCE = "source"
 PACKAGE_WINDOWS_EXE = "windows_exe"
@@ -102,39 +103,6 @@ def normalize_update_package_type(download_url, package_type=None):
     return PACKAGE_SOURCE
 
 
-def get_system_proxies():
-    """获取系统代理设置"""
-    proxies = {}
-
-    # 从环境变量获取代理
-    http_proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
-    https_proxy = os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')
-
-    if http_proxy:
-        proxies['http'] = http_proxy
-    if https_proxy:
-        proxies['https'] = https_proxy
-
-    # 如果没有环境变量，尝试从 Windows 注册表获取
-    if not proxies and sys.platform == 'win32':
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                r'Software\Microsoft\Windows\CurrentVersion\Internet Settings') as key:
-                proxy_enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
-                if proxy_enable:
-                    proxy_server, _ = winreg.QueryValueEx(key, 'ProxyServer')
-                    if proxy_server:
-                        if not proxy_server.startswith('http'):
-                            proxy_server = f'http://{proxy_server}'
-                        proxies['http'] = proxy_server
-                        proxies['https'] = proxy_server
-        except (WindowsError, FileNotFoundError, OSError):
-            pass
-
-    return proxies if proxies else None
-
-
 def compare_versions(v1, v2):
     """
     比较版本号
@@ -183,10 +151,11 @@ class UpdateCheckThread(QThread):
                 'User-Agent': 'Nuclei-GUI-Updater'
             }
 
-            # 获取系统代理
-            proxies = get_system_proxies()
-
-            response = requests.get(GITHUB_API_URL, headers=headers, timeout=self.timeout, proxies=proxies)
+            response = create_session(PROXY_SCOPE_UPDATE).get(
+                GITHUB_API_URL,
+                headers=headers,
+                timeout=self.timeout,
+            )
 
             if response.status_code == 200:
                 data = response.json()
@@ -225,7 +194,7 @@ class UpdateCheckThread(QThread):
         except requests.exceptions.ConnectionError:
             self.error_signal.emit(tr("update.connection_failed"))
         except Exception as e:
-            self.error_signal.emit(tr("update.check_failed", error=str(e)))
+            self.error_signal.emit(tr("update.check_failed", error=redact_proxy_credentials(e)))
 
 
 class UpdateDownloadThread(QThread):
@@ -256,7 +225,7 @@ class UpdateDownloadThread(QThread):
                 self._install_source_update(temp_dir)
 
         except Exception as e:
-            self.finished_signal.emit(False, tr("update.failed", error=str(e)))
+            self.finished_signal.emit(False, tr("update.failed", error=redact_proxy_credentials(e)))
 
         finally:
             # 清理临时文件
@@ -271,8 +240,12 @@ class UpdateDownloadThread(QThread):
         self.progress_signal.emit(start_percent, tr("update.downloading"))
 
         headers = {'User-Agent': 'Nuclei-GUI-Updater'}
-        proxies = get_system_proxies()
-        response = requests.get(self.download_url, headers=headers, stream=True, timeout=60, proxies=proxies)
+        response = create_session(PROXY_SCOPE_UPDATE).get(
+            self.download_url,
+            headers=headers,
+            stream=True,
+            timeout=60,
+        )
 
         if response.status_code != 200:
             self.finished_signal.emit(False, tr("update.download_failed_http", code=response.status_code))

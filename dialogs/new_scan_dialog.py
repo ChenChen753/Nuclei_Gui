@@ -211,6 +211,7 @@ class NewScanDialog(QDialog):
         self.poc_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.poc_table.verticalHeader().setVisible(False)
         self.poc_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.poc_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.poc_table.setAlternatingRowColors(True)
         self.poc_table.setAlternatingRowColors(True)
         self.poc_table.doubleClicked.connect(self._on_poc_double_click)  # 双击查看 POC
@@ -617,6 +618,8 @@ class NewScanDialog(QDialog):
                 from dialogs.poc_editor_dialog import POCEditorDialog
                 dialog = POCEditorDialog(poc_path, self)
                 dialog.exec_()
+                from core.fortress_style import clear_table_interaction_state
+                clear_table_interaction_state(self.poc_table)
     
     def _update_target_count(self):
         """更新目标数量"""

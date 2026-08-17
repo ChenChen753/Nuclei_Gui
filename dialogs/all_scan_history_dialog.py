@@ -82,6 +82,7 @@ class AllScanHistoryDialog(QDialog):
         self.history_table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         
         self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.history_table.setAlternatingRowColors(True)
         layout.addWidget(self.history_table)
         
@@ -246,6 +247,8 @@ class AllScanHistoryDialog(QDialog):
         """显示扫描详情 - 调用父窗口方法"""
         if self.parent_window and hasattr(self.parent_window, 'show_scan_detail'):
             self.parent_window.show_scan_detail(scan_id)
+            from core.fortress_style import clear_table_interaction_state
+            clear_table_interaction_state(self.history_table)
         else:
             QMessageBox.warning(self, tr("msg.error"), tr("history.cannot_show_detail"))
     

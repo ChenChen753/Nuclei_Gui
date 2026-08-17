@@ -6,7 +6,7 @@ A PyQt5-based graphical interface for Nuclei. It provides POC management, asset 
 
 ## Project Info
 
-- **Version**: 2.5.6
+- **Version**: 2.6.0
 - **Author**: 辰辰
 - **Tech Stack**: Python 3.x + PyQt5 + Nuclei
 - **Platforms**: Windows / macOS / Linux
@@ -120,7 +120,7 @@ For better Linux compatibility, build on a stable distribution such as Ubuntu 20
 
 ### Release Asset Policy
 
-- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.5.6.exe` or `Nuclei_GUI_windows_x64_v2.5.6.exe`. Binary update support is currently limited to the Windows exe build.
+- Windows: upload `Nuclei_GUI*.exe`, for example `Nuclei_GUI_v2.6.0.exe` or `Nuclei_GUI_windows_x64_v2.6.0.exe`. Binary update support is currently limited to the Windows exe build.
 - Source runs: the updater uses GitHub's generated source zip for source-code updates, so no extra source zip asset is required.
 - Windows exe runs: the updater detects the PyInstaller build, downloads the matching `Nuclei_GUI*.exe`, closes the current app, replaces the exe, and restarts automatically.
 - macOS/Linux: this repository provides local packaging scripts, but does not publish official binary assets for these systems.
@@ -177,6 +177,17 @@ You must not use this tool for:
 The author and contributors are not responsible for any misuse, abuse, unauthorized use, or direct or indirect damages caused by this tool. By downloading, installing, running, or redistributing this tool, you acknowledge that you understand and accept all risks and legal responsibilities.
 
 ## Changelog
+
+### v2.6.0
+
+- Added independent proxy modes for AI, FOFA, other asset search, scan traffic, online resources/POC sync, and updates/downloads.
+- Custom proxy URLs now use secure storage, and proxy credentials are redacted from network errors.
+- Improved POC generation with URL/request variable handling, public template and security article references, time-based SQL injection validation, and more accurate matcher output.
+- Added scan-result filtering by keyword, severity, and optional request/response content.
+- Moved POC directory imports to a cancellable background task with progress and failure reporting.
+- New users now default to skip the discovery probe (`-nh`) and enable verbose logging (`-v`); existing saved choices are preserved.
+- URL asset imports now remove duplicate targets automatically.
+- Removed the native dotted focus frame from the selected main navigation item.
 
 ### v2.5.6
 

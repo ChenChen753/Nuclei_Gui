@@ -6,6 +6,7 @@ import requests
 from typing import Dict, List
 from .search_engine_base import SearchEngineBase, SearchResult, register_engine
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_ASSET_SEARCH, create_session, redact_proxy_credentials
 
 
 class QuakeClient(SearchEngineBase):
@@ -19,6 +20,7 @@ class QuakeClient(SearchEngineBase):
         # Quake 默认 API 地址
         if not self.api_url:
             self.api_url = "https://quake.360.net/api/v3/search/quake_service"
+        self._session = create_session(PROXY_SCOPE_ASSET_SEARCH)
     
     def search(self, query: str, page: int = 1, page_size: int = 100) -> Dict:
         """
@@ -45,7 +47,7 @@ class QuakeClient(SearchEngineBase):
                 'include': ['ip', 'port', 'hostname', 'transport', 'service', 'location', 'title'],
             }
             
-            response = requests.post(self.api_url, json=payload, headers=headers, timeout=30)
+            response = self._session.post(self.api_url, json=payload, headers=headers, timeout=30)
             data = response.json()
             
             if data.get('code') != 0:
@@ -92,9 +94,9 @@ class QuakeClient(SearchEngineBase):
         except requests.exceptions.Timeout:
             return {'success': False, 'error': tr("search.quake.request_timeout")}
         except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': tr("search.quake.request_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.quake.request_failed", error=redact_proxy_credentials(e))}
         except Exception as e:
-            return {'success': False, 'error': tr("search.quake.parse_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.quake.parse_failed", error=redact_proxy_credentials(e))}
     
     def test_connection(self) -> Dict:
         """测试连接"""
@@ -104,7 +106,7 @@ class QuakeClient(SearchEngineBase):
         try:
             # 使用用户信息接口测试
             headers = {'X-QuakeToken': self.api_key}
-            response = requests.get(
+            response = self._session.get(
                 'https://quake.360.net/api/v3/user/info',
                 headers=headers,
                 timeout=10
@@ -127,7 +129,7 @@ class QuakeClient(SearchEngineBase):
                     'message': data.get('message', tr("search.invalid_api_key")),
                 }
         except Exception as e:
-            return {'success': False, 'message': tr("search.connection_failed_with_error", error=str(e))}
+            return {'success': False, 'message': tr("search.connection_failed_with_error", error=redact_proxy_credentials(e))}
     
     def get_config_fields(self) -> List[Dict]:
         return [

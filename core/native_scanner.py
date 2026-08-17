@@ -5,10 +5,11 @@ import re
 import urllib3
 import logging
 import threading
-from urllib.parse import urljoin
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from PyQt5.QtCore import QObject, pyqtSignal
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_SCAN, create_session
+from core.target_utils import resolve_template_url, substitute_template_url_variables
 
 # 禁用 SSL 警告（扫描工具通常需要访问自签名证书的目标）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -43,12 +44,6 @@ class NativeScanner(QObject):
         self.max_workers = max(1, min(configured_workers, 32))
         self.max_in_flight = max(self.max_workers * 2, 8)
         self.retries = self.config.get('retries', 0)
-        self.proxies = None
-        if self.config.get('proxy'):
-            self.proxies = {
-                'http': self.config['proxy'],
-                'https': self.config['proxy']
-            }
 
     def stop(self):
         """停止扫描 - 线程安全的停止机制"""
@@ -93,10 +88,8 @@ class NativeScanner(QObject):
         """Execute the scan with bounded in-flight tasks."""
         self.log_signal.emit(tr("scanner.engine_started", targets=len(self.targets), templates=len(self.templates), workers=self.max_workers))
 
-        self._session = requests.Session()
+        self._session = create_session(PROXY_SCOPE_SCAN)
         self._session.verify = False
-        if self.proxies:
-            self._session.proxies = self.proxies
 
         parsed_templates = []
         for t_path in self.templates:
@@ -194,7 +187,13 @@ class NativeScanner(QObject):
             return None
 
         # 合并 requests 和 http 字段
-        requests_list = tmpl.get('http', []) + tmpl.get('requests', [])
+        requests_list = []
+        for section_name in ('http', 'requests'):
+            section = tmpl.get(section_name, [])
+            if isinstance(section, dict):
+                section = [section]
+            if isinstance(section, list):
+                requests_list.extend(section)
         
         # 用于存储所有步骤的响应，供后续匹配使用
         last_response = None
@@ -214,6 +213,8 @@ class NativeScanner(QObject):
             try:
                 # 检查是否是 raw 格式（多步骤 POC）
                 raw_list = req_def.get('raw', [])
+                if isinstance(raw_list, str):
+                    raw_list = [raw_list]
                 if raw_list:
                     # 处理 raw 格式请求
                     for raw_request in raw_list:
@@ -230,6 +231,8 @@ class NativeScanner(QObject):
                     # 处理传统 path 格式请求
                     method = req_def.get('method', 'GET')
                     path_list = req_def.get('path', [])
+                    if isinstance(path_list, str):
+                        path_list = [path_list]
                     
                     # 遍历路径变体
                     for raw_path in path_list:
@@ -237,19 +240,25 @@ class NativeScanner(QObject):
                         if not self._is_running:
                             return None
                             
-                        # 替换变量 {{BaseURL}}
-                        path = raw_path.replace('{{BaseURL}}', target.rstrip('/'))
-                        path = path.replace('{{RootURL}}', target.rstrip('/'))
+                        path = resolve_template_url(target, raw_path)
                         
                         # 使用 Session 发送请求 (可被 stop() 中断)
                         if not self._session:
                             return None
                             
+                        headers = {
+                            key: substitute_template_url_variables(target, value)
+                            for key, value in req_def.get('headers', {'User-Agent': 'Mozilla/5.0'}).items()
+                        }
+                        body = req_def.get('body')
+                        if isinstance(body, str):
+                            body = substitute_template_url_variables(target, body)
+
                         response = self._session.request(
                             method=method,
                             url=path,
-                            headers=req_def.get('headers', {'User-Agent': 'Mozilla/5.0'}),
-                            data=req_def.get('body'),
+                            headers=headers,
+                            data=body,
                             timeout=(2, self.timeout),
                             allow_redirects=True
                         )
@@ -257,7 +266,7 @@ class NativeScanner(QObject):
                         last_response = response
                         last_matched_url = path
                         last_req_method = method
-                        last_req_body = req_def.get('body', '')
+                        last_req_body = body or ''
                 
                 # 如果这个请求块有匹配器，则进行匹配
                 if matchers and last_response:
@@ -301,10 +310,7 @@ class NativeScanner(QObject):
             return None
         
         try:
-            # 替换变量
-            raw_request = raw_request.replace('{{Hostname}}', target.replace('http://', '').replace('https://', '').rstrip('/'))
-            raw_request = raw_request.replace('{{BaseURL}}', target.rstrip('/'))
-            raw_request = raw_request.replace('{{RootURL}}', target.rstrip('/'))
+            raw_request = substitute_template_url_variables(target, raw_request)
             
             # 解析 raw 请求
             lines = raw_request.strip().split('\n')
@@ -320,14 +326,7 @@ class NativeScanner(QObject):
             method = parts[0].upper()
             path = parts[1]
             
-            # 构建完整 URL
-            if path.startswith('/'):
-                # 相对路径，需要加上目标 base URL
-                from urllib.parse import urlparse
-                parsed = urlparse(target)
-                url = f"{parsed.scheme}://{parsed.netloc}{path}"
-            else:
-                url = path
+            url = resolve_template_url(target, path)
             
             # 解析头和 body
             headers = {}

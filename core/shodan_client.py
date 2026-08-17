@@ -6,6 +6,7 @@ import requests
 from typing import Dict, List
 from .search_engine_base import SearchEngineBase, SearchResult, register_engine
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_ASSET_SEARCH, create_session, redact_proxy_credentials
 
 
 class ShodanClient(SearchEngineBase):
@@ -19,6 +20,7 @@ class ShodanClient(SearchEngineBase):
         # Shodan 默认 API 地址
         if not self.api_url:
             self.api_url = "https://api.shodan.io"
+        self._session = create_session(PROXY_SCOPE_ASSET_SEARCH)
     
     def search(self, query: str, page: int = 1, page_size: int = 100) -> Dict:
         """
@@ -40,7 +42,7 @@ class ShodanClient(SearchEngineBase):
                 'page': page,
             }
             
-            response = requests.get(url, params=params, timeout=30)
+            response = self._session.get(url, params=params, timeout=30)
             
             if response.status_code == 401:
                 return {'success': False, 'error': tr("search.shodan.invalid_api_key")}
@@ -94,9 +96,9 @@ class ShodanClient(SearchEngineBase):
         except requests.exceptions.Timeout:
             return {'success': False, 'error': tr("search.shodan.request_timeout")}
         except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': tr("search.shodan.request_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.shodan.request_failed", error=redact_proxy_credentials(e))}
         except Exception as e:
-            return {'success': False, 'error': tr("search.shodan.parse_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.shodan.parse_failed", error=redact_proxy_credentials(e))}
     
     def test_connection(self) -> Dict:
         """测试连接"""
@@ -106,7 +108,7 @@ class ShodanClient(SearchEngineBase):
         try:
             url = f"{self.api_url}/api-info"
             params = {'key': self.api_key}
-            response = requests.get(url, params=params, timeout=10)
+            response = self._session.get(url, params=params, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
@@ -124,7 +126,7 @@ class ShodanClient(SearchEngineBase):
                 return {'success': False, 'message': tr("search.connection_failed_with_code", code=response.status_code)}
                 
         except Exception as e:
-            return {'success': False, 'message': tr("search.connection_failed_with_error", error=str(e))}
+            return {'success': False, 'message': tr("search.connection_failed_with_error", error=redact_proxy_credentials(e))}
     
     def get_config_fields(self) -> List[Dict]:
         return [

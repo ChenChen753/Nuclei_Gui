@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ui_scale import scaled, scaled_style
 from core.nuclei_runner import get_nuclei_path
+from core.network_proxy import PROXY_SCOPE_SCAN, build_subprocess_environment
 from i18n import tr
 
 
@@ -64,7 +65,8 @@ class QuickTestThread(QThread):
                 bufsize=1,
                 startupinfo=startupinfo,
                 encoding='utf-8',
-                errors='ignore'
+                errors='ignore',
+                env=build_subprocess_environment(PROXY_SCOPE_SCAN)
             )
             
             found_vuln = False

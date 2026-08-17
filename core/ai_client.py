@@ -4,6 +4,7 @@ import logging
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_AI, create_session, redact_proxy_credentials
 
 class AIWorkerThread(QThread):
     """
@@ -35,6 +36,7 @@ class AIClient:
         self.api_url = api_url.rstrip('/')
         self.api_key = api_key
         self.model = model
+        self._session = create_session(PROXY_SCOPE_AI)
         
     def generate_fofa_rule(self, poc_name):
         """
@@ -96,7 +98,7 @@ class AIClient:
             if not endpoint.endswith("/chat/completions"):
                 endpoint = f"{endpoint}/chat/completions"
                 
-            response = requests.post(endpoint, headers=headers, json=data, timeout=60)
+            response = self._session.post(endpoint, headers=headers, json=data, timeout=60)
             
             if response.status_code == 200:
                 result = response.json()
@@ -106,7 +108,7 @@ class AIClient:
                 return tr("ai.request_failed", status=response.status_code, detail=response.text)
 
         except Exception as e:
-            return tr("ai.exception_occurred", error=str(e))
+            return tr("ai.exception_occurred", error=redact_proxy_credentials(e))
 
     def _call_api(self, prompt: str, system_prompt: str = "You are a helpful cybersecurity assistant.") -> str:
         """通用 API 调用方法"""
@@ -132,7 +134,7 @@ class AIClient:
             if not endpoint.endswith("/chat/completions"):
                 endpoint = f"{endpoint}/chat/completions"
             
-            response = requests.post(endpoint, headers=headers, json=data, timeout=90)
+            response = self._session.post(endpoint, headers=headers, json=data, timeout=90)
             
             if response.status_code == 200:
                 result = response.json()
@@ -140,7 +142,7 @@ class AIClient:
             else:
                 return tr("ai.request_failed", status=response.status_code, detail=response.text)
         except Exception as e:
-            return tr("ai.exception_occurred", error=str(e))
+            return tr("ai.exception_occurred", error=redact_proxy_credentials(e))
     
     def generate_poc(self, vuln_description: str) -> str:
         """根据漏洞描述生成 Nuclei POC"""

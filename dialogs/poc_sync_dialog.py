@@ -13,10 +13,11 @@ import os
 import sys
 import zipfile
 import shutil
-import urllib.request
+import requests
 import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ui_scale import scaled, scaled_style
+from core.network_proxy import PROXY_SCOPE_ONLINE_RESOURCES, create_session, redact_proxy_credentials
 from i18n import tr
 
 
@@ -51,12 +52,24 @@ class SyncThread(QThread):
             # 下载 ZIP
             self.log_signal.emit(f"[*] {tr('poc.sync.downloading')}")
             
-            def progress_hook(block_num, block_size, total_size):
-                if total_size > 0:
-                    downloaded = block_num * block_size
-                    self.progress_signal.emit(downloaded, total_size)
-            
-            urllib.request.urlretrieve(download_url, zip_path, progress_hook)
+            response = create_session(PROXY_SCOPE_ONLINE_RESOURCES).get(
+                download_url,
+                stream=True,
+                timeout=60,
+            )
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded = 0
+            with open(zip_path, "wb") as zip_file:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if not self._is_running:
+                        return
+                    if not chunk:
+                        continue
+                    zip_file.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        self.progress_signal.emit(downloaded, total_size)
             
             self.log_signal.emit(f"[*] {tr('poc.sync.download_done_extracting')}")
             
@@ -123,8 +136,9 @@ class SyncThread(QThread):
             self.finished_signal.emit(True, tr("poc.sync.success", count=copied_count))
             
         except Exception as e:
-            self.log_signal.emit(f"\n[!] {tr('poc.sync.failed', error=str(e))}")
-            self.finished_signal.emit(False, str(e))
+            safe_error = redact_proxy_credentials(e)
+            self.log_signal.emit(f"\n[!] {tr('poc.sync.failed', error=safe_error)}")
+            self.finished_signal.emit(False, safe_error)
     
     def stop(self):
         self._is_running = False

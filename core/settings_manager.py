@@ -7,6 +7,14 @@ from pathlib import Path
 from PyQt5.QtCore import QSettings
 
 from i18n import tr
+from core.network_proxy import (
+    DEFAULT_PROXY_MODES,
+    PROXY_MODE_CUSTOM,
+    PROXY_SCOPE_SCAN,
+    normalize_proxy_mode,
+    normalize_proxy_scope,
+    normalize_proxy_url,
+)
 from core.secure_storage import get_secure_storage
 
 
@@ -136,9 +144,65 @@ class SettingsManager:
         self.settings.sync()  # 强制同步到磁盘，确保配置不会丢失
     
     # ============== 扫描参数配置 ==============
+
+    def get_proxy_config(self, scope: str) -> dict:
+        """获取指定功能的代理配置。"""
+        scope = normalize_proxy_scope(scope)
+        mode_key = f"network_proxy_mode_{scope}"
+        stored_mode = self.settings.value(mode_key, None)
+        proxy_url = self._secure_storage.retrieve(f"network_proxy_url_{scope}") or ""
+
+        # 兼容旧版扫描代理字段：首次升级时自动视为自定义扫描代理。
+        if stored_mode is None and scope == PROXY_SCOPE_SCAN:
+            legacy_proxy = str(self.settings.value("scan_proxy", "") or "").strip()
+            if legacy_proxy:
+                return {
+                    "mode": PROXY_MODE_CUSTOM,
+                    "url": normalize_proxy_url(legacy_proxy),
+                }
+
+        return {
+            "mode": normalize_proxy_mode(stored_mode or DEFAULT_PROXY_MODES[scope]),
+            "url": normalize_proxy_url(proxy_url) if proxy_url else "",
+        }
+
+    def get_proxy_configs(self) -> dict:
+        """获取全部功能的代理配置。"""
+        return {scope: self.get_proxy_config(scope) for scope in DEFAULT_PROXY_MODES}
+
+    def save_proxy_configs(self, configs: dict):
+        """校验后一次性保存全部代理配置。"""
+        normalized = {}
+        for raw_scope, config in configs.items():
+            scope = normalize_proxy_scope(raw_scope)
+            mode = normalize_proxy_mode((config or {}).get("mode"))
+            proxy_url = normalize_proxy_url((config or {}).get("url", ""))
+            if mode == PROXY_MODE_CUSTOM and not proxy_url:
+                raise ValueError(f"Custom proxy URL is required for {scope}")
+            normalized[scope] = {"mode": mode, "url": proxy_url}
+
+        for scope, config in normalized.items():
+            self.settings.setValue(f"network_proxy_mode_{scope}", config["mode"])
+            storage_key = f"network_proxy_url_{scope}"
+            if config["url"]:
+                if not self._secure_storage.store(storage_key, config["url"]):
+                    raise ValueError(f"Failed to store proxy URL for {scope}")
+            else:
+                self._secure_storage.delete(storage_key)
+
+        scan_config = normalized.get(PROXY_SCOPE_SCAN)
+        if scan_config is not None:
+            legacy_proxy = scan_config["url"] if scan_config["mode"] == PROXY_MODE_CUSTOM else ""
+            self.settings.setValue("scan_proxy", legacy_proxy)
+        self.settings.sync()
+
+    def save_proxy_config(self, scope: str, mode: str, proxy_url: str = ""):
+        """保存单个功能的代理配置。"""
+        self.save_proxy_configs({scope: {"mode": mode, "url": proxy_url}})
     
     def get_scan_config(self) -> dict:
         """获取扫描默认参数"""
+        scan_proxy = self.get_proxy_config(PROXY_SCOPE_SCAN)
         return {
             "rate_limit": int(self.settings.value("scan_rate_limit", 150)),
             "bulk_size": int(self.settings.value("scan_bulk_size", 25)),
@@ -146,9 +210,12 @@ class SettingsManager:
             "retries": int(self.settings.value("scan_retries", 0)),
             "follow_redirects": str(self.settings.value("scan_follow_redirects", "false")).lower() == "true",
             "stop_at_first_match": str(self.settings.value("scan_stop_at_first_match", "false")).lower() == "true",
-            "no_httpx": str(self.settings.value("scan_no_httpx", "false")).lower() == "true",
-            "verbose": str(self.settings.value("scan_verbose", "false")).lower() == "true",
-            "proxy": self.settings.value("scan_proxy", ""),
+            # Skip the discovery probe and enable verbose output by default for new users.
+            # Existing QSettings values still take precedence, so user choices are preserved.
+            "no_httpx": str(self.settings.value("scan_no_httpx", "true")).lower() == "true",
+            "verbose": str(self.settings.value("scan_verbose", "true")).lower() == "true",
+            "proxy": scan_proxy["url"] if scan_proxy["mode"] == PROXY_MODE_CUSTOM else "",
+            "proxy_mode": scan_proxy["mode"],
             "use_native_scanner": str(self.settings.value("scan_use_native", "false")).lower() == "true",
             "oast_mode": self.settings.value("scan_oast_mode", "auto"),
             "oast_server": self.settings.value("scan_oast_server", ""),
@@ -170,7 +237,13 @@ class SettingsManager:
         self.settings.setValue("scan_stop_at_first_match", "true" if config.get("stop_at_first_match") else "false")
         self.settings.setValue("scan_no_httpx", "true" if config.get("no_httpx") else "false")
         self.settings.setValue("scan_verbose", "true" if config.get("verbose") else "false")
-        self.settings.setValue("scan_proxy", config.get("proxy", ""))
+        # Keep compatibility with callers that still pass the former scan proxy fields.
+        if "proxy" in config or "proxy_mode" in config:
+            proxy_url = config.get("proxy", "")
+            proxy_mode = config.get("proxy_mode")
+            if proxy_mode is None:
+                proxy_mode = PROXY_MODE_CUSTOM if proxy_url else DEFAULT_PROXY_MODES[PROXY_SCOPE_SCAN]
+            self.save_proxy_config(PROXY_SCOPE_SCAN, proxy_mode, proxy_url)
         self.settings.setValue("scan_use_native", "true" if config.get("use_native_scanner") else "false")
         self.settings.setValue("scan_oast_mode", config.get("oast_mode", "auto"))
         self.settings.setValue("scan_oast_server", config.get("oast_server", ""))

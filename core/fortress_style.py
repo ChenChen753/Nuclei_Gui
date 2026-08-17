@@ -5,6 +5,25 @@ FORTRESS 风格共享样式和组件
 """
 from core.ui_scale import scaled_style
 from core.paths import resource_path
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QProxyStyle, QStyle
+
+
+class NoFocusRectStyle(QProxyStyle):
+    """隐藏原生虚线焦点框，同时保留控件的键盘焦点和交互能力。"""
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PE_FrameFocusRect:
+            return
+        super().drawPrimitive(element, option, painter, widget)
+
+
+def install_focus_rect_suppression(app):
+    """为整个应用安装焦点框抑制样式。"""
+    style = NoFocusRectStyle(app.style())
+    app.setStyle(style)
+    app._no_focus_rect_style = style
+    return style
 
 def _get_table_stylesheet_raw(colors):
     """获取表格通用样式（未缩放，供内部嵌入使用）"""
@@ -75,6 +94,31 @@ def get_table_stylesheet(colors=None):
     if colors is None:
         colors = {}
     return scaled_style(_get_table_stylesheet_raw(colors))
+
+
+def clear_table_interaction_state(table):
+    """Clear modal-dialog selection/focus residue from a table."""
+    if table is None:
+        return
+
+    def clear_state():
+        try:
+            selection_model = table.selectionModel()
+            if selection_model:
+                selection_model.clear()
+            table.setCurrentItem(None)
+            table.clearSelection()
+            table.clearFocus()
+            viewport = table.viewport()
+            if viewport:
+                viewport.clearFocus()
+                viewport.update()
+        except RuntimeError:
+            pass
+
+    clear_state()
+    QTimer.singleShot(0, clear_state)
+    QTimer.singleShot(80, clear_state)
 
 def _get_list_stylesheet_raw(colors):
     """获取列表通用样式（未缩放，供内部嵌入使用）"""

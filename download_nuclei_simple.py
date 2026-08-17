@@ -12,6 +12,8 @@ import zipfile
 import tempfile
 from pathlib import Path
 
+from core.network_proxy import PROXY_SCOPE_UPDATE, create_session, redact_proxy_credentials
+
 def get_system_info():
     """获取系统信息"""
     system = platform.system().lower()
@@ -36,14 +38,6 @@ def download_nuclei_simple():
     # 获取系统信息
     system, arch = get_system_info()
     print(f"检测到系统: {system}-{arch}")
-    
-    # 清除可能的代理环境变量
-    proxy_env_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-    original_env = {}
-    for var in proxy_env_vars:
-        if var in os.environ:
-            original_env[var] = os.environ[var]
-            del os.environ[var]
     
     try:
         # 创建 bin 目录
@@ -71,12 +65,7 @@ def download_nuclei_simple():
         
         print("正在下载...")
         
-        # 创建session，完全禁用代理
-        session = requests.Session()
-        session.proxies = {"http": None, "https": None}
-        session.trust_env = False  # 不信任环境变量
-        
-        print("尝试直连下载...")
+        session = create_session(PROXY_SCOPE_UPDATE)
         response = session.get(download_url, stream=True, timeout=60)
         response.raise_for_status()
         print("连接成功！")
@@ -138,13 +127,8 @@ def download_nuclei_simple():
         return False
         
     except Exception as e:
-        print(f"[FAIL] 下载失败: {e}")
+        print(f"[FAIL] 下载失败: {redact_proxy_credentials(e)}")
         return False
-    finally:
-        # 恢复原始环境变量
-        for var, value in original_env.items():
-            os.environ[var] = value
-
 if __name__ == "__main__":
     try:
         success = download_nuclei_simple()

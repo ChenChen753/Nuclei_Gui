@@ -7,6 +7,7 @@ import base64
 from typing import Dict, List
 from .search_engine_base import SearchEngineBase, SearchResult, register_engine
 from i18n import tr
+from core.network_proxy import PROXY_SCOPE_ASSET_SEARCH, create_session, redact_proxy_credentials
 
 
 class HunterClient(SearchEngineBase):
@@ -20,6 +21,7 @@ class HunterClient(SearchEngineBase):
         # Hunter 默认 API 地址
         if not self.api_url:
             self.api_url = "https://hunter.qianxin.com/openApi/search"
+        self._session = create_session(PROXY_SCOPE_ASSET_SEARCH)
     
     def search(self, query: str, page: int = 1, page_size: int = 100) -> Dict:
         """
@@ -45,7 +47,7 @@ class HunterClient(SearchEngineBase):
                 'is_web': 3,  # 1:web 2:非web 3:全部
             }
             
-            response = requests.get(self.api_url, params=params, timeout=30)
+            response = self._session.get(self.api_url, params=params, timeout=30)
             data = response.json()
             
             if data.get('code') != 200:
@@ -92,9 +94,9 @@ class HunterClient(SearchEngineBase):
         except requests.exceptions.Timeout:
             return {'success': False, 'error': tr("search.hunter.request_timeout")}
         except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': tr("search.hunter.request_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.hunter.request_failed", error=redact_proxy_credentials(e))}
         except Exception as e:
-            return {'success': False, 'error': tr("search.hunter.parse_failed", error=str(e))}
+            return {'success': False, 'error': tr("search.hunter.parse_failed", error=redact_proxy_credentials(e))}
     
     def test_connection(self) -> Dict:
         """测试连接"""

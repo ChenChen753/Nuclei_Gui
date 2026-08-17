@@ -33,8 +33,8 @@ env/
 *.swo
 
 # Database
-# *.db
-# *.sqlite3
+*.db
+*.sqlite3
 
 # Logs
 logs/
@@ -50,8 +50,22 @@ bin/nuclei_darwin
 bin/nuclei_linux
 
 # User data
-# poc_library/cloud/
-# poc_library/user_generated/
+poc_library/cloud/*
+!poc_library/cloud/.gitkeep
+poc_library/custom/*
+!poc_library/custom/.gitkeep
+poc_library/user_generated/*
+!poc_library/user_generated/.gitkeep
+poc_library/_*/
+poc_library/*.yaml
+poc_library/*.yml
+!poc_library/test-robots-txt.yaml
+
+# Local tools and generated artifacts
+.sentinel/
+artifacts/
+github_push_config_*.json
+tests/
 
 # Temp files
 *.tmp
